@@ -6,10 +6,12 @@ This document describes the structure and the behavior of the YamlPuller
 library. The library is a YAML 1.2 pull parser for Object Pascal.
 
 A pull parser returns one event at a time. The caller controls the event
-sequence. The caller can stop the event loop at any event. The library reads
-the source and builds the event list at the construction of the puller. An
-early stop therefore avoids the JSON tree, and not the source read. The
-streaming behavior and its limits are recorded in `doc/usage.md`.
+sequence. The caller can stop the event loop at any event. The puller reads
+the source one document region at a time. The scanner holds the tokens of the
+current region only. A caller that stops early does not read the later
+documents. The `Parse` operation reads the whole stream because it builds the
+whole JSON value. The streaming behavior and its limits are recorded in
+`doc/usage.md`.
 
 The public API is the contract. The README file holds the public API. This
 document describes the internals below that API.
@@ -80,6 +82,11 @@ text value. The scanner tracks these items:
 - The block context stack. The stack holds the open block collections.
 - The current position, as a line number and a column number.
 
+The scanner reads one document region at a time. The region holds the lines
+from the current position to the next document start marker at column 0. The
+scanner holds the tokens of the current region only. The scanner reads the
+next region when the caller requests its tokens.
+
 The scanner reports indentation as block collection tokens. An indentation
 increase opens a block collection. An indentation decrease closes the open
 block collections. The scanner has these token families:
@@ -117,7 +124,13 @@ and resolves each alias against that table.
 ### JSON Bridge
 
 The JSON bridge reads the event stream and builds an FCL JSON value. The
-README documents this operation as `Parse: TJSONData`.
+README documents these operations as `Parse: TJSONData` and
+`Parse(event, data)`.
+
+The `Parse(event, data)` operation builds the value that starts at one event.
+The operation reads the whole event stream to locate the event. A node event
+builds its node. A document start builds the whole document. A stream start
+and an end event start no value.
 
 The bridge applies these rules to a single document:
 

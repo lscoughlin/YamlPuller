@@ -229,6 +229,80 @@ The value of a document follows the event type:
 A mapping key becomes the name of a JSON member. A mapping value becomes the
 JSON member value.
 
+## The Parse Operation for a Subsection
+
+`Parse(event, data)` reads the subsection that starts at `event` and assigns
+the JSON value to `data`. The caller releases `data`.
+
+The value follows the start event:
+
+| Start event | Result in `data` |
+|---|---|
+| Mapping start | The `TJSONObject` of the mapping |
+| Sequence start | The `TJSONArray` of the sequence |
+| Scalar | The scalar value |
+| Alias | The value of the referenced anchor |
+| Document start | The value of the whole document |
+| Stream start | nil, because the event starts no value |
+| An end event | nil, because the event starts no value |
+
+An alias inside the subsection resolves to an anchor that is complete before
+`event`, in the same document. The event identifies the start by its value.
+The event must come from the same puller. The operation reads the whole event
+stream to locate the event.
+
+## Example: a Subsection
+
+The example below reads the events until the value of the member `server`.
+The example parses that value alone.
+
+```pascal
+uses
+  fpjson, YamlPuller, YamlPuller.Events;
+
+var
+  puller: TYamlPuller;
+  event: TYamlEvent;
+  data: TJSONData;
+  found: TYamlEvent;
+begin
+  puller := TYamlPullerFactory.FromString(
+    'server:' + LineEnding +
+    '  host: localhost' + LineEnding +
+    '  port: 8080' + LineEnding);
+  try
+    found := Default(TYamlEvent);
+    while puller.HasNext do
+    begin
+      event := puller.Next;
+      if (event.EventType = yetMappingStart)
+        and (event.Line = 2) then
+      begin
+        found := event;
+        Break;
+      end;
+    end;
+    if found.EventType = yetMappingStart then
+    begin
+      puller.Parse(found, data);
+      try
+        WriteLn(data.AsJSON);
+      finally
+        data.Free;
+      end;
+    end;
+  finally
+    puller.Free;
+  end;
+end;
+```
+
+The example writes this text:
+
+```json
+{"host":"localhost","port":8080}
+```
+
 ## Example: a String to a JSON Value
 
 The example below creates a puller from a string. The example parses the
@@ -364,16 +438,19 @@ end;
 
 ## Streaming and Memory
 
-The `FromStream` method and the `FromFile` method read the whole source at the
-construction of the puller. The construction then builds the complete event
-list. The `Next` call walks that list. The `Next` call therefore does no new
-work on the source.
+The puller reads the source one document region at a time. A document region
+holds the lines from the current position to the next document start marker
+at column 0. The scanner reads a region, produces its tokens, and the parser
+produces the events of that region. The `Next` call reads the next region
+only when the current region has no more events.
 
-The event interface is a pull interface. The caller reads one event at a time.
-The interface is not a streaming interface with a bounded buffer. An early
-stop in the event loop does not release the source memory. An early stop does
-avoid the JSON tree, because the `Parse` call is the only operation that
-builds an FCL JSON tree.
+The event interface is a pull interface. The caller reads one event at a
+time. An early stop in the event loop does not read the later documents.
+
+An alias can refer to an anchor in an earlier document. The puller therefore
+keeps a log of the events that the caller has read. The log grows with the
+reads. A caller that stops early holds only the log of the events read so
+far.
 
 The memory that the puller holds follows this table:
 
@@ -381,15 +458,18 @@ The memory that the puller holds follows this table:
 |---|---|
 | The source text | One character value per input character |
 | The line start offsets | One integer per physical line |
-| The event list | One event per token run |
+| The tokens of one region | One token per token run, for the current region only |
+| The event log | One event per event that the caller has read |
 | The JSON tree | One value per node, for the `Parse` call only |
 
-A caller that needs a bounded buffer reads the source in parts and creates one
-puller for each part.
+The `Parse` operation reads the whole remaining source, because it builds the
+whole JSON value. The `Parse(event, data)` operation also reads the whole
+remaining source, because it locates the event by value.
 
 ## Release of Resources
 
 The caller releases each `TYamlPuller` instance. The puller does not release
 the data source. The caller releases the data source.
 
-The caller releases each value that `Parse` returns.
+The caller releases each value that `Parse` returns. The caller also releases
+`data` after the `Parse(event, data)` operation.

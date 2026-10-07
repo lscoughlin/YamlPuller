@@ -50,6 +50,7 @@ TYamlPuller:
     Next: TYamlEvent # the next event
     HasNext: boolean # more events are available
     Parse: TJSONData # reads the whole event stream into an FCL JSON value
+    Parse( event: TYamlEvent, data: TJSONData ) # reads one subsection
 ```
 
 - `Next` returns the next event from the stream.
@@ -69,6 +70,18 @@ TYamlPuller:
     core schema has the tags null, bool, int, float, str, map, and seq. A
     YAML 1.1-only tag raises an error that names the line and the column.
   - The caller releases the returned value.
+  - The caller releases the returned value.
+- `Parse(event, data)` reads the subsection that starts at `event` and
+  assigns the JSON value to `data`. The caller releases `data`.
+  - A mapping start, a sequence start, a scalar, and an alias build their
+    node value.
+  - A document start builds the value of the whole document.
+  - A stream start and an end event set `data` to nil, because such an
+    event starts no value.
+  - An alias inside the subsection resolves to an anchor that is complete
+    before `event`, in the same document.
+  - The event identifies the start by its value. The event must come from
+    the same puller.
 
 ## TYamlEvent
 

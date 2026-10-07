@@ -11,7 +11,7 @@ FPCFLAGS  ?= -Mdelphi -vw -Fu./src \
              -Fu$(UNITS)/rtl -Fu$(UNITS)/rtl-objpas -Fu$(UNITS)/rtl-extra
 BIN        = bin
 
-EXAMPLES   = example_string example_bytes example_stream example_file example_events
+EXAMPLES   = example_string example_bytes example_stream example_file example_events example_section
 
 .PHONY: all test examples clean
 
