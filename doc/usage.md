@@ -448,9 +448,10 @@ The event interface is a pull interface. The caller reads one event at a
 time. An early stop in the event loop does not read the later documents.
 
 An alias can refer to an anchor in an earlier document. The puller therefore
-keeps a log of the events that the caller has read. The log grows with the
-reads. A caller that stops early holds only the log of the events read so
-far.
+keeps a log of the events of the regions that it has read. The log holds the
+events of the fetched regions, which is about one document at a time. The log
+grows with the regions read. A caller that stops early holds only the log of
+the regions read so far.
 
 The memory that the puller holds follows this table:
 
@@ -459,7 +460,7 @@ The memory that the puller holds follows this table:
 | The source text | One character value per input character |
 | The line start offsets | One integer per physical line |
 | The tokens of one region | One token per token run, for the current region only |
-| The event log | One event per event that the caller has read |
+| The event log | One event per event of each region that the puller has read |
 | The JSON tree | One value per node, for the `Parse` call only |
 
 The `Parse` operation reads the whole remaining source, because it builds the
