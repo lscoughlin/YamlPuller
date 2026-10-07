@@ -15,7 +15,8 @@ The library consists of two main classes: `TYamlPullerFactory` and
 ## Build
 
 `make` is the build system. The `Makefile` compiles the library units in
-`src/` and runs the unit tests in `test/`.
+`src/`, runs the unit tests in `test/`, and runs the example programs in
+`examples/`. The `make examples` target compiles and runs each example.
 
 The repository also holds a Lazarus package file, `YamlPuller.lpk`. The
 package file lists the library units and the `FCL` requirement. A user opens
@@ -77,10 +78,17 @@ TYamlPuller:
 TYamlEvent:
     EventType: TYamlEventType # one value of the YAML event type enumeration
     EventText: utf8string # the event text
+    NestLevel: integer # the nesting depth
+    Line: integer # the 1-based line of the event
+    Column: integer # the 1-based column of the event
 ```
 
 - `EventType` is one value of the `TYamlEventType` enumeration.
 - `EventText` holds the text of the event.
+- `NestLevel` is the nesting depth. The stream start event is 0. Each mapping
+  start event and each sequence start event adds one. Each mapping end event
+  and each sequence end event removes one.
+- `Line` and `Column` give the position of the event in the input.
 
 ## License
 

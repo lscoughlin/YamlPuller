@@ -6,22 +6,24 @@ This document describes the structure and the behavior of the YamlPuller
 library. The library is a YAML 1.2 pull parser for Object Pascal.
 
 A pull parser returns one event at a time. The caller controls the event
-sequence. The caller can stop the parse at any event. The library therefore
-does no work for content that the caller does not request.
+sequence. The caller can stop the event loop at any event. The library reads
+the source and builds the event list at the construction of the puller. An
+early stop therefore avoids the JSON tree, and not the source read. The
+streaming behavior and its limits are recorded in `doc/usage.md`.
 
 The public API is the contract. The README file holds the public API. This
 document describes the internals below that API.
 
 ## Assumptions
 
-The library has no source code at the time of writing. This section records
-the assumed environment. A later story confirms or corrects each assumption.
+This section records the assumed environment. Each assumption is confirmed
+against the build.
 
 | Item | Assumed value |
 |---|---|
 | Language | Object Pascal |
 | Compiler mode | `{$mode delphi}` |
-| Compiler | Free Pascal 3.2.2 or later |
+| Compiler | Free Pascal 3.2.2 or later. The build is confirmed with Free Pascal 3.2.4. |
 | JSON classes | FCL `fpjson` (`TJSONObject`, `TJSONArray`, and the scalar classes) |
 | Test framework | `fpcunit` with a console runner |
 | YAML version | YAML 1.2 |
@@ -78,17 +80,22 @@ text value. The scanner tracks these items:
 - The block context stack. The stack holds the open block collections.
 - The current position, as a line number and a column number.
 
-The scanner has these token families:
+The scanner reports indentation as block collection tokens. An indentation
+increase opens a block collection. An indentation decrease closes the open
+block collections. The scanner has these token families:
 
-| Family | Examples |
+| Family | Token kinds |
 |---|---|
-| Indentation | block indent, block dedent |
-| Document markers | `---`, `...` |
-| Directives | `%YAML`, `%TAG` |
-| Collection markers | `-`, `?`, `:`, `[`, `]`, `{`, `}`, `,` |
-| Scalars | plain, single-quoted, double-quoted, block literal, block folded |
-| Properties | anchor `&`, alias `*`, tag `!`, tag handle |
-| Comments | `#` to the end of the line |
+| Document markers | `ytkDocumentStart` for `---`, `ytkDocumentEnd` for `...` |
+| Directives | `ytkDirective` for `%YAML` and `%TAG` |
+| Block collections | `ytkMapStart`, `ytkMapEnd`, `ytkSeqStart`, `ytkSeqEnd` |
+| Block entries | `ytkEntry` for `-`, `ytkKey` for `?`, `ytkValue` for `:` |
+| Flow collections | `ytkFlowMapStart`, `ytkFlowMapEnd`, `ytkFlowSeqStart`, `ytkFlowSeqEnd`, `ytkFlowEntry` for `,` |
+| Scalars | `ytkScalar`, with the style plain, single-quoted, double-quoted, block literal, or block folded |
+| Properties | `ytkAnchor` for `&`, `ytkAlias` for `*`, `ytkTag` for `!` and a tag handle |
+
+A comment runs from `#` to the end of the line. The scanner removes a
+comment and reports no token for it.
 
 ### Parser
 
@@ -102,8 +109,10 @@ The state machine has these states:
 - Scalar.
 - Alias.
 
-The parser resolves anchors and aliases. The parser holds a table of anchors
-for the current document. An alias event refers to one entry in that table.
+The parser reports an anchor as a property of the next node event. The parser
+reports an alias as an alias event. The alias stays unresolved in the event
+stream. The JSON bridge holds the table of anchors for the current document
+and resolves each alias against that table.
 
 ### JSON Bridge
 
@@ -133,13 +142,21 @@ document order.
 
 ## Event Model
 
-`TYamlEvent` is the unit of output from the parser. The README defines two
+`TYamlEvent` is the unit of output from the parser. The README defines five
 fields:
 
 | Field | Type | Meaning |
 |---|---|---|
 | `EventType` | `TYamlEventType` | The kind of the event |
 | `EventText` | `utf8string` | The text of the event |
+| `NestLevel` | `integer` | The nesting depth of the event |
+| `Line` | `integer` | The 1-based line of the event |
+| `Column` | `integer` | The 1-based column of the event |
+
+The stream start event has the nest level 0. Each `*Start` event of a
+collection adds one to the nest level. Each `*End` event of a collection
+removes one. A scalar event and an alias event keep the nest level of the
+enclosing collection.
 
 `TYamlEventType` is an enumeration. The enumeration requires these values:
 
@@ -240,8 +257,8 @@ The library applies these rules:
 - `Parse` applies a depth bound to the alias resolution. The depth bound
   closes the resource-exhaustion risk of a deep or a large alias expansion.
 
-The depth bound is a configuration value. The default value is recorded at
-first use.
+The depth bound is the `MaxDepth` property of the JSON bridge. The default
+value is 1000.
 
 ## Non-String Mapping Keys
 

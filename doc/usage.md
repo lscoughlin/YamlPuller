@@ -171,6 +171,20 @@ core-schema text. The result is this JSON text:
 {"1":"one","true":"yes"}
 ```
 
+The canonical text of a scalar key follows this table:
+
+| Key node | Member name |
+|---|---|
+| String | The text of the key |
+| Null | `null` |
+| Boolean | `true` or `false` |
+| Integer | The decimal text |
+| Float | The shortest decimal text |
+
+A hex integer key and an octal integer key therefore become decimal text. The
+key `0xFF` becomes the member name `255`. The key `0o10` becomes the member
+name `8`. The key `1.50` becomes the member name `1.5`.
+
 A complex key is a sequence or a mapping. The explicit key form uses a
 question mark and a space (`? `). The example below holds a sequence key.
 
@@ -269,7 +283,8 @@ begin
     while puller.HasNext do
     begin
       event := puller.Next;
-      WriteLn(Ord(event.EventType), ': ', event.EventText);
+      WriteLn(Ord(event.EventType), ': ', event.EventText,
+        ' (', event.Line, ',', event.Column, ') level=', event.NestLevel);
     end;
   finally
     puller.Free;
@@ -346,6 +361,31 @@ begin
   end;
 end;
 ```
+
+## Streaming and Memory
+
+The `FromStream` method and the `FromFile` method read the whole source at the
+construction of the puller. The construction then builds the complete event
+list. The `Next` call walks that list. The `Next` call therefore does no new
+work on the source.
+
+The event interface is a pull interface. The caller reads one event at a time.
+The interface is not a streaming interface with a bounded buffer. An early
+stop in the event loop does not release the source memory. An early stop does
+avoid the JSON tree, because the `Parse` call is the only operation that
+builds an FCL JSON tree.
+
+The memory that the puller holds follows this table:
+
+| Buffer | Size |
+|---|---|
+| The source text | One character value per input character |
+| The line start offsets | One integer per physical line |
+| The event list | One event per token run |
+| The JSON tree | One value per node, for the `Parse` call only |
+
+A caller that needs a bounded buffer reads the source in parts and creates one
+puller for each part.
 
 ## Release of Resources
 
