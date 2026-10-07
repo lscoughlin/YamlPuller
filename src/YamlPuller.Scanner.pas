@@ -6,6 +6,8 @@ Scanner driver: indentation and simple keys (plan story S03).
 @br
 The driver reads the physical lines and produces the token list. The family
 units supply the scalar, block, flow, and comment functions.
+The driver reads one document region at a time through TYamlLineReader. The
+puller therefore reads only the lines of the regions that it requests.
 }
 unit YamlPuller.Scanner;
 
@@ -101,20 +103,38 @@ begin
   end;
 end;
 
-procedure LoadLines(var Ctx: TScanContext; AInput: TYamlInput);
+procedure AddRegionLine(var Ctx: TScanContext; const AText: UnicodeString;
+  ANumber: Integer);
 var
-  S, Clean: UnicodeString;
+  Clean: UnicodeString;
+begin
+  Clean := StripComment(AText);
+  SetLength(Ctx.Lines, Length(Ctx.Lines) + 1);
+  Ctx.Lines[High(Ctx.Lines)].Text := Clean;
+  Ctx.Lines[High(Ctx.Lines)].Indent := IndentOf(Clean);
+  Ctx.Lines[High(Ctx.Lines)].LineNo := ANumber;
+end;
+
+procedure LoadRegion(var Ctx: TScanContext; AReader: TYamlLineReader);
+var
+  S: UnicodeString;
   N: Integer;
 begin
+  // read the lines of one document region: the lines up to the next
+  // document start marker. A marker that starts the region is included. A
+  // later marker belongs to the next region, so the reader keeps it. A
+  // document marker has no indentation: an indented "---" is content, not
+  // a marker.
   SetLength(Ctx.Lines, 0);
-  AInput.Reset;
-  while AInput.NextLine(S, N) do
+  while AReader.NextLine(S, N) do
   begin
-    Clean := StripComment(S);
-    SetLength(Ctx.Lines, Length(Ctx.Lines) + 1);
-    Ctx.Lines[High(Ctx.Lines)].Text := Clean;
-    Ctx.Lines[High(Ctx.Lines)].Indent := IndentOf(Clean);
-    Ctx.Lines[High(Ctx.Lines)].LineNo := N;
+    if (IndentOf(S) = 0) and IsDocumentStart(S)
+      and (Length(Ctx.Lines) > 0) then
+    begin
+      AReader.PushBack(S, N);
+      Break;
+    end;
+    AddRegionLine(Ctx, S, N);
   end;
 end;
 
@@ -152,6 +172,12 @@ var
   Last: Integer;
   Style: TYamlScalarStyle;
 begin
+  if (ALine < 0) or (ALine > High(Ctx.Lines)) then
+  begin
+    // the indicator has no content line in this region
+    Ctx.Index := High(Ctx.Lines) + 1;
+    Exit;
+  end;
   ScanBlockScalar(AIndicator, AHeader, Ctx.Lines, ALine,
     Ctx.Lines[ALine].Indent, Text, Last);
   if AIndicator = '|' then
@@ -577,29 +603,53 @@ end;
 function TYamlScanner.Scan: TArray<TYamlToken>;
 var
   Ctx: TScanContext;
+  State: TYamlScanState;
+  Reader: TYamlLineReader;
 begin
-  Ctx.State := TYamlScanState.Create;
+  State := TYamlScanState.Create;
+  Ctx.State := State;
   Ctx.Index := 0;
-  LoadLines(Ctx, FInput);
-  while Ctx.Index <= High(Ctx.Lines) do
-  begin
-    SkipBlank(Ctx);
-    if Ctx.Index > High(Ctx.Lines) then
-      Break;
-    if IsDirective(Ctx.Lines[Ctx.Index].Text) then
+  SetLength(Ctx.Lines, 0);
+  Reader := TYamlLineReader.Create(FInput);
+  try
+    FInput.Reset;
+    while True do
     begin
-      Ctx.State.AddSimple(ytkDirective, Trim(Ctx.Lines[Ctx.Index].Text),
-        Ctx.Lines[Ctx.Index].LineNo, 1);
-      Inc(Ctx.Index);
-      Continue;
+      // read the lines of one document region, then scan them. The next
+      // region is read only when the caller asks for its tokens.
+      LoadRegion(Ctx, Reader);
+      if Length(Ctx.Lines) = 0 then
+        Break;
+      Ctx.Index := 0;
+      while Ctx.Index <= High(Ctx.Lines) do
+      begin
+        SkipBlank(Ctx);
+        if Ctx.Index > High(Ctx.Lines) then
+          Break;
+        // a marker at column 0 that is not the first line of the region
+        // starts the next region. The reader kept it for the next call.
+        if (IndentOf(Ctx.Lines[Ctx.Index].Text) = 0)
+          and IsDocumentStart(Ctx.Lines[Ctx.Index].Text)
+          and (Ctx.Index > 0) then
+          Break;
+        if IsDirective(Ctx.Lines[Ctx.Index].Text) then
+        begin
+          State.AddSimple(ytkDirective, Trim(Ctx.Lines[Ctx.Index].Text),
+            Ctx.Lines[Ctx.Index].LineNo, 1);
+          Inc(Ctx.Index);
+          Continue;
+        end;
+        ScanDocument(Ctx);
+        SkipBlank(Ctx);
+        if (Ctx.Index <= High(Ctx.Lines))
+          and IsDocumentEnd(Ctx.Lines[Ctx.Index].Text) then
+          Inc(Ctx.Index);
+      end;
     end;
-    ScanDocument(Ctx);
-    SkipBlank(Ctx);
-    if (Ctx.Index <= High(Ctx.Lines))
-      and IsDocumentEnd(Ctx.Lines[Ctx.Index].Text) then
-      Inc(Ctx.Index);
+  finally
+    Reader.Free;
   end;
-  Result := Ctx.State.Tokens;
+  Result := State.Tokens;
 end;
 
 end.
