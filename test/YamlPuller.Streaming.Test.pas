@@ -16,7 +16,7 @@ interface
 
 uses
   SysUtils, Classes, fpcunit, testregistry, YamlPuller, YamlPuller.Input,
-  YamlPuller.Events;
+  YamlPuller.Events, YamlPuller.Scanner;
 
 type
   TStreamingTest = class(TTestCase)
@@ -27,6 +27,7 @@ type
     procedure TestEventCountIsNotBufferedForPrefix;
     procedure TestLineReaderHoldsOffsets;
     procedure TestLargeDocument;
+    procedure TestScannerReadsOneDocumentAtATime;
   end;
 
 implementation
@@ -124,6 +125,29 @@ begin
     Puller.Free;
   end;
   AssertTrue('the large document is supported', True);
+end;
+
+procedure TStreamingTest.TestScannerReadsOneDocumentAtATime;
+var
+  Input: TYamlInput;
+  Scanner: TYamlScanner;
+begin
+  // the scanner reads one document region for each call, not the whole
+  // source. The count proves that a later document is not read early.
+  Input := TYamlInput.FromString(UTF8String(
+    'a: 1'#10'---'#10'b: 2'#10'---'#10'c: 3'#10));
+  Scanner := TYamlScanner.Create(Input);
+  try
+    Scanner.NextDocumentTokens;
+    AssertEquals('the scanner read one document region', 1, Scanner.DocumentsRead);
+    Scanner.NextDocumentTokens;
+    AssertEquals('the scanner read two document regions', 2, Scanner.DocumentsRead);
+    Scanner.NextDocumentTokens;
+    AssertEquals('the scanner read three document regions', 3, Scanner.DocumentsRead);
+  finally
+    Scanner.Free;
+    Input.Free;
+  end;
 end;
 
 initialization

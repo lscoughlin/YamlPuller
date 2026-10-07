@@ -25,10 +25,23 @@ type
   TYamlScanner = class
   private
     FInput: TYamlInput;
+    FReader: TYamlLineReader;
+    FStarted: Boolean;
+    FDone: Boolean;
+    FDocumentsRead: Integer;
   public
     constructor Create(AInput: TYamlInput);
+    destructor Destroy; override;
+    /// scan the next document region and return its tokens. The function
+    /// returns an empty list at the end of the stream. The caller reads
+    /// only the regions that it requests.
+    function NextDocumentTokens: TArray<TYamlToken>;
     /// scan the whole source and return the token list
     function Scan: TArray<TYamlToken>;
+    /// true at the end of the source
+    property Done: Boolean read FDone;
+    /// the number of document regions that the scanner has read
+    property DocumentsRead: Integer read FDocumentsRead;
   end;
 
 function FindKeyColon(const ALine: UnicodeString): Integer;
@@ -598,58 +611,91 @@ constructor TYamlScanner.Create(AInput: TYamlInput);
 begin
   inherited Create;
   FInput := AInput;
+  FReader := TYamlLineReader.Create(FInput);
+  FStarted := False;
+  FDone := False;
+  FDocumentsRead := 0;
+end;
+
+destructor TYamlScanner.Destroy;
+begin
+  FReader.Free;
+  inherited Destroy;
+end;
+
+function TYamlScanner.NextDocumentTokens: TArray<TYamlToken>;
+var
+  Ctx: TScanContext;
+  Region: TYamlScanState;
+  I: Integer;
+begin
+  if FDone then
+    Exit(nil);
+  if not FStarted then
+  begin
+    FStarted := True;
+    FInput.Reset;
+  end;
+  // the tokens of one region are scratch data. The scanner holds no token
+  // list for the whole source, so the memory of a region is released here.
+  Region := TYamlScanState.Create;
+  try
+    Ctx.State := Region;
+    Ctx.Index := 0;
+    Inc(FDocumentsRead);
+    LoadRegion(Ctx, FReader);
+    if Length(Ctx.Lines) = 0 then
+    begin
+      FDone := True;
+      Exit(nil);
+    end;
+    while Ctx.Index <= High(Ctx.Lines) do
+    begin
+      SkipBlank(Ctx);
+      if Ctx.Index > High(Ctx.Lines) then
+        Break;
+      // a marker at column 0 that is not the first line of the region
+      // starts the next region. The reader kept it for the next call.
+      if (IndentOf(Ctx.Lines[Ctx.Index].Text) = 0)
+        and IsDocumentStart(Ctx.Lines[Ctx.Index].Text)
+        and (Ctx.Index > 0) then
+        Break;
+      if IsDirective(Ctx.Lines[Ctx.Index].Text) then
+      begin
+        Region.AddSimple(ytkDirective, Trim(Ctx.Lines[Ctx.Index].Text),
+          Ctx.Lines[Ctx.Index].LineNo, 1);
+        Inc(Ctx.Index);
+        Continue;
+      end;
+      ScanDocument(Ctx);
+      SkipBlank(Ctx);
+      if (Ctx.Index <= High(Ctx.Lines))
+        and IsDocumentEnd(Ctx.Lines[Ctx.Index].Text) then
+        Inc(Ctx.Index);
+    end;
+    SetLength(Result, Length(Region.Tokens));
+    for I := 0 to High(Result) do
+      Result[I] := Region.Tokens[I];
+  finally
+    Region.Free;
+  end;
 end;
 
 function TYamlScanner.Scan: TArray<TYamlToken>;
 var
-  Ctx: TScanContext;
-  State: TYamlScanState;
-  Reader: TYamlLineReader;
+  Part: TArray<TYamlToken>;
+  I: Integer;
 begin
-  State := TYamlScanState.Create;
-  Ctx.State := State;
-  Ctx.Index := 0;
-  SetLength(Ctx.Lines, 0);
-  Reader := TYamlLineReader.Create(FInput);
-  try
-    FInput.Reset;
-    while True do
+  SetLength(Result, 0);
+  while not FDone do
+  begin
+    Part := NextDocumentTokens;
+    for I := 0 to High(Part) do
     begin
-      // read the lines of one document region, then scan them. The next
-      // region is read only when the caller asks for its tokens.
-      LoadRegion(Ctx, Reader);
-      if Length(Ctx.Lines) = 0 then
-        Break;
-      Ctx.Index := 0;
-      while Ctx.Index <= High(Ctx.Lines) do
-      begin
-        SkipBlank(Ctx);
-        if Ctx.Index > High(Ctx.Lines) then
-          Break;
-        // a marker at column 0 that is not the first line of the region
-        // starts the next region. The reader kept it for the next call.
-        if (IndentOf(Ctx.Lines[Ctx.Index].Text) = 0)
-          and IsDocumentStart(Ctx.Lines[Ctx.Index].Text)
-          and (Ctx.Index > 0) then
-          Break;
-        if IsDirective(Ctx.Lines[Ctx.Index].Text) then
-        begin
-          State.AddSimple(ytkDirective, Trim(Ctx.Lines[Ctx.Index].Text),
-            Ctx.Lines[Ctx.Index].LineNo, 1);
-          Inc(Ctx.Index);
-          Continue;
-        end;
-        ScanDocument(Ctx);
-        SkipBlank(Ctx);
-        if (Ctx.Index <= High(Ctx.Lines))
-          and IsDocumentEnd(Ctx.Lines[Ctx.Index].Text) then
-          Inc(Ctx.Index);
-      end;
+      SetLength(Result, Length(Result) + 1);
+      Result[High(Result)] := Part[I];
     end;
-  finally
-    Reader.Free;
   end;
-  Result := State.Tokens;
 end;
 
 end.

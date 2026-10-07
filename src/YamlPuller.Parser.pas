@@ -25,12 +25,26 @@ type
     FTokens: TArray<TYamlToken>;
     FEvents: array of TYamlEventEx;
     FSchema: TYamlSchemaResolver;
+    FLevel: Integer;
+    FInDocument: Boolean;
+    FStreamStarted: Boolean;
+    FPendingAnchor: UTF8String;
+    FPendingTag: UTF8String;
     procedure Emit(const AEvent: TYamlEventEx);
+    procedure Reset;
+    procedure ParseTokens(const ATokens: TArray<TYamlToken>);
   public
     constructor Create;
     destructor Destroy; override;
     /// parse the token list and return the event list
     function Parse(const ATokens: TArray<TYamlToken>): TArray<TYamlEventEx>;
+    /// parse the tokens of one document region. The parser keeps the level
+    /// and the pending properties across the calls. The function returns
+    /// the events of this region.
+    function ParseDocumentTokens(const ATokens: TArray<TYamlToken>)
+      : TArray<TYamlEventEx>;
+    /// close the open document and the stream and return the final events
+    function ParseStreamEnd: TArray<TYamlEventEx>;
     property Schema: TYamlSchemaResolver read FSchema;
   end;
 
@@ -56,80 +70,104 @@ end;
 
 function TYamlParser.Parse(const ATokens: TArray<TYamlToken>): TArray<TYamlEventEx>;
 var
-  I, Level, DocCount: Integer;
-  PendingAnchor, PendingTag: UTF8String;
+  I, From: Integer;
+begin
+  Reset;
+  FLevel := 0;
+  FInDocument := False;
+  FPendingAnchor := '';
+  FPendingTag := '';
+  SetLength(FEvents, 0);
+  Emit(MakeEvent(yetStreamStart, '', 0, 0, 0));
+  FStreamStarted := True;
+  ParseTokens(ATokens);
+  if FInDocument then
+  begin
+    Emit(MakeEvent(yetDocumentEnd, '', FLevel, 0, 0));
+    FInDocument := False;
+  end;
+  Emit(MakeEvent(yetStreamEnd, '', 0, 0, 0));
+  From := 0;
+  SetLength(Result, Length(FEvents));
+  for I := From to High(FEvents) do
+    Result[I] := FEvents[I];
+end;
+
+procedure TYamlParser.Reset;
+begin
+  FLevel := 0;
+  FInDocument := False;
+  FStreamStarted := False;
+  FPendingAnchor := '';
+  FPendingTag := '';
+  SetLength(FEvents, 0);
+end;
+
+procedure TYamlParser.ParseTokens(const ATokens: TArray<TYamlToken>);
+var
+  I: Integer;
   Tok: TYamlToken;
   Ev: TYamlEventEx;
   SType: TYamlScalarType;
-  IsPlain, InDocument: Boolean;
+  IsPlain: Boolean;
 begin
   FTokens := ATokens;
-  SetLength(FEvents, 0);
-  Level := 0;
-  DocCount := 0;
-  InDocument := False;
-  PendingAnchor := '';
-  PendingTag := '';
-
-  Emit(MakeEvent(yetStreamStart, '', 0, 0, 0));
-
   for I := 0 to High(ATokens) do
   begin
     Tok := ATokens[I];
     case Tok.Kind of
       ytkAnchor:
-        PendingAnchor := UTF8Encode(Tok.Text);
+        FPendingAnchor := UTF8Encode(Tok.Text);
       ytkTag:
-        PendingTag := UTF8Encode(Tok.Text);
+        FPendingTag := UTF8Encode(Tok.Text);
       ytkDocumentStart:
         begin
-          if InDocument then
-            Emit(MakeEvent(yetDocumentEnd, '', Level, Tok.Line, Tok.Column));
-          Emit(MakeEvent(yetDocumentStart, '', Level, Tok.Line, Tok.Column));
-          InDocument := True;
-          Inc(DocCount);
+          if FInDocument then
+            Emit(MakeEvent(yetDocumentEnd, '', FLevel, Tok.Line, Tok.Column));
+          Emit(MakeEvent(yetDocumentStart, '', FLevel, Tok.Line, Tok.Column));
+          FInDocument := True;
         end;
       ytkDocumentEnd:
         begin
-          Emit(MakeEvent(yetDocumentEnd, '', Level, Tok.Line, Tok.Column));
-          InDocument := False;
+          Emit(MakeEvent(yetDocumentEnd, '', FLevel, Tok.Line, Tok.Column));
+          FInDocument := False;
         end;
       ytkMapStart, ytkFlowMapStart:
         begin
-          Ev := MakeEvent(yetMappingStart, '', Level, Tok.Line, Tok.Column);
-          Ev.Anchor := PendingAnchor;
-          Ev.Tag := PendingTag;
-          PendingAnchor := '';
-          PendingTag := '';
+          Ev := MakeEvent(yetMappingStart, '', FLevel, Tok.Line, Tok.Column);
+          Ev.Anchor := FPendingAnchor;
+          Ev.Tag := FPendingTag;
+          FPendingAnchor := '';
+          FPendingTag := '';
           Emit(Ev);
-          Inc(Level);
+          Inc(FLevel);
         end;
       ytkMapEnd, ytkFlowMapEnd:
         begin
-          Dec(Level);
-          Emit(MakeEvent(yetMappingEnd, '', Level, Tok.Line, Tok.Column));
+          Dec(FLevel);
+          Emit(MakeEvent(yetMappingEnd, '', FLevel, Tok.Line, Tok.Column));
         end;
       ytkSeqStart, ytkFlowSeqStart:
         begin
-          Ev := MakeEvent(yetSequenceStart, '', Level, Tok.Line, Tok.Column);
-          Ev.Anchor := PendingAnchor;
-          Ev.Tag := PendingTag;
-          PendingAnchor := '';
-          PendingTag := '';
+          Ev := MakeEvent(yetSequenceStart, '', FLevel, Tok.Line, Tok.Column);
+          Ev.Anchor := FPendingAnchor;
+          Ev.Tag := FPendingTag;
+          FPendingAnchor := '';
+          FPendingTag := '';
           Emit(Ev);
-          Inc(Level);
+          Inc(FLevel);
         end;
       ytkSeqEnd, ytkFlowSeqEnd:
         begin
-          Dec(Level);
-          Emit(MakeEvent(yetSequenceEnd, '', Level, Tok.Line, Tok.Column));
+          Dec(FLevel);
+          Emit(MakeEvent(yetSequenceEnd, '', FLevel, Tok.Line, Tok.Column));
         end;
       ytkScalar:
         begin
           IsPlain := Tok.ScalarStyle = yssPlain;
-          if PendingTag <> '' then
+          if FPendingTag <> '' then
           begin
-            if not FSchema.ApplyTag(PendingTag, SType, Tok.Line, Tok.Column) then
+            if not FSchema.ApplyTag(FPendingTag, SType, Tok.Line, Tok.Column) then
             begin
               // an unknown tag: keep the underlying node type
               if IsPlain then
@@ -142,33 +180,65 @@ begin
             SType := FSchema.ResolvePlain(UTF8Encode(Tok.Text))
           else
             SType := ystStr;
-          Ev := MakeEvent(yetScalar, UTF8Encode(Tok.Text), Level,
+          Ev := MakeEvent(yetScalar, UTF8Encode(Tok.Text), FLevel,
             Tok.Line, Tok.Column);
           Ev.ScalarType := SType;
-          Ev.Anchor := PendingAnchor;
-          Ev.Tag := PendingTag;
-          PendingAnchor := '';
-          PendingTag := '';
+          Ev.Anchor := FPendingAnchor;
+          Ev.Tag := FPendingTag;
+          FPendingAnchor := '';
+          FPendingTag := '';
           Emit(Ev);
         end;
       ytkAlias:
         begin
-          Ev := MakeEvent(yetAlias, UTF8Encode(Tok.Text), Level,
+          Ev := MakeEvent(yetAlias, UTF8Encode(Tok.Text), FLevel,
             Tok.Line, Tok.Column);
           Emit(Ev);
-          PendingAnchor := '';
-          PendingTag := '';
+          FPendingAnchor := '';
+          FPendingTag := '';
         end;
     else
       ; // ytkKey, ytkValue, ytkEntry, ytkDirective
     end;
   end;
+end;
 
-  // close any open document
-  if InDocument then
-    Emit(MakeEvent(yetDocumentEnd, '', Level, 0, 0));
+function TYamlParser.ParseDocumentTokens(const ATokens: TArray<TYamlToken>)
+  : TArray<TYamlEventEx>;
+var
+  Before, I: Integer;
+begin
+  Before := Length(FEvents);
+  if not FStreamStarted then
+  begin
+    Emit(MakeEvent(yetStreamStart, '', 0, 0, 0));
+    FStreamStarted := True;
+  end;
+  ParseTokens(ATokens);
+  if FInDocument then
+  begin
+    Emit(MakeEvent(yetDocumentEnd, '', FLevel, 0, 0));
+    FInDocument := False;
+  end;
+  SetLength(Result, Length(FEvents) - Before);
+  for I := 0 to High(Result) do
+    Result[I] := FEvents[Before + I];
+end;
+
+function TYamlParser.ParseStreamEnd: TArray<TYamlEventEx>;
+var
+  Before, I: Integer;
+begin
+  Before := Length(FEvents);
+  if not FStreamStarted then
+  begin
+    Emit(MakeEvent(yetStreamStart, '', 0, 0, 0));
+    FStreamStarted := True;
+  end;
   Emit(MakeEvent(yetStreamEnd, '', 0, 0, 0));
-  Result := FEvents;
+  SetLength(Result, Length(FEvents) - Before);
+  for I := 0 to High(Result) do
+    Result[I] := FEvents[Before + I];
 end;
 
 end.

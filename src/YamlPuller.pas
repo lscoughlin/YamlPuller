@@ -25,9 +25,16 @@ type
   private
     FInput: TYamlInput;
     FOwnsInput: Boolean;
-    FEvents: array of TYamlEventEx;
+    FScanner: TYamlScanner;
+    FParser: TYamlParser;
+    FEvents: TArray<TYamlEventEx>;
     FIndex: Integer;
-    function FindEventIndex(const AEvent: TYamlEvent): Integer;
+    FStreamDone: Boolean;
+    FLog: TArray<TYamlEventEx>;
+    function FindEventIndex(const AEvents: TArray<TYamlEventEx>;
+      const AEvent: TYamlEvent): Integer;
+    function BuildLog: TArray<TYamlEventEx>;
+    function NextEvent: TYamlEventEx;
   public
     /// create a puller from a source. The puller releases the source when
     /// AOwnsInput is true.
@@ -76,72 +83,135 @@ end;
 { TYamlPuller }
 
 constructor TYamlPuller.Create(AInput: TYamlInput; AOwnsInput: Boolean);
-var
-  Scanner: TYamlScanner;
-  Parser: TYamlParser;
 begin
   inherited Create;
   FInput := AInput;
   FOwnsInput := AOwnsInput;
-  Scanner := TYamlScanner.Create(FInput);
-  try
-    Parser := TYamlParser.Create;
-    try
-      FEvents := Parser.Parse(Scanner.Scan);
-    finally
-      Parser.Free;
-    end;
-  finally
-    Scanner.Free;
-  end;
+  FScanner := TYamlScanner.Create(FInput);
+  FParser := TYamlParser.Create;
+  SetLength(FEvents, 0);
   FIndex := 0;
+  FStreamDone := False;
+  SetLength(FLog, 0);
 end;
 
 destructor TYamlPuller.Destroy;
 begin
+  FParser.Free;
+  FScanner.Free;
   if FOwnsInput then
     FInput.Free;
   inherited Destroy;
 end;
 
-function TYamlPuller.Next: TYamlEvent;
+function TYamlPuller.BuildLog: TArray<TYamlEventEx>;
+var
+  Tokens: TArray<TYamlToken>;
+  Part: TArray<TYamlEventEx>;
+  I: Integer;
+begin
+  // drain the rest of the stream into the log. A document region is read
+  // and parsed only when the caller asks for its events. Every event is
+  // appended once, so the log holds the stream in order.
+  while not FStreamDone do
+  begin
+    if FScanner.Done then
+    begin
+      Part := FParser.ParseStreamEnd;
+      FStreamDone := True;
+    end
+    else
+    begin
+      Tokens := FScanner.NextDocumentTokens;
+      Part := FParser.ParseDocumentTokens(Tokens);
+    end;
+    for I := 0 to High(Part) do
+    begin
+      SetLength(FLog, Length(FLog) + 1);
+      FLog[High(FLog)] := Part[I];
+    end;
+  end;
+  Result := FLog;
+end;
+
+function TYamlPuller.NextEvent: TYamlEventEx;
+var
+  Tokens: TArray<TYamlToken>;
+  Part: TArray<TYamlEventEx>;
+  I: Integer;
 begin
   if FIndex <= High(FEvents) then
   begin
-    Result := PublicEvent(FEvents[FIndex]);
+    Result := FEvents[FIndex];
     Inc(FIndex);
-  end
-  else
-    Result := PublicEvent(MakeEvent(yetStreamEnd, '', 0, 0, 0));
+    Exit;
+  end;
+  while True do
+  begin
+    if FScanner.Done then
+    begin
+      Part := FParser.ParseStreamEnd;
+      FStreamDone := True;
+    end
+    else
+    begin
+      Tokens := FScanner.NextDocumentTokens;
+      Part := FParser.ParseDocumentTokens(Tokens);
+    end;
+    if Length(Part) > 0 then
+    begin
+      FEvents := Part;
+      FIndex := 0;
+      // the fetched events join the log at the fetch point
+      for I := 0 to High(Part) do
+      begin
+        SetLength(FLog, Length(FLog) + 1);
+        FLog[High(FLog)] := Part[I];
+      end;
+      Result := FEvents[FIndex];
+      Inc(FIndex);
+      Exit;
+    end;
+    if FStreamDone then
+      Exit(MakeEvent(yetStreamEnd, '', 0, 0, 0));
+  end;
+end;
+
+function TYamlPuller.Next: TYamlEvent;
+begin
+  Result := PublicEvent(NextEvent);
 end;
 
 function TYamlPuller.HasNext: Boolean;
 begin
-  Result := FIndex <= High(FEvents);
+  Result := (FIndex <= High(FEvents)) or (not FStreamDone);
 end;
 
 function TYamlPuller.Parse: TJSONData;
 var
   Builder: TYamlJsonBuilder;
+  All: TArray<TYamlEventEx>;
 begin
   Builder := TYamlJsonBuilder.Create;
   try
-    Result := Builder.Build(FEvents);
+    All := BuildLog;
+    Result := Builder.Build(All);
   finally
     Builder.Free;
   end;
 end;
 
-function TYamlPuller.FindEventIndex(const AEvent: TYamlEvent): Integer;
+function TYamlPuller.FindEventIndex(const AEvents: TArray<TYamlEventEx>;
+  const AEvent: TYamlEvent): Integer;
 var
   I: Integer;
 begin
-  for I := 0 to High(FEvents) do
-    if (FEvents[I].EventType = AEvent.EventType)
-      and (FEvents[I].Line = AEvent.Line)
-      and (FEvents[I].Column = AEvent.Column)
-      and (FEvents[I].NestLevel = AEvent.NestLevel)
-      and (FEvents[I].EventText = AEvent.EventText) then
+  for I := 0 to High(AEvents) do
+    if (AEvents[I].EventType = AEvent.EventType)
+      and (AEvents[I].Line = AEvent.Line)
+      and (AEvents[I].Column = AEvent.Column)
+      and (AEvents[I].NestLevel = AEvent.NestLevel)
+      and (AEvents[I].EventText = AEvent.EventText) then
       Exit(I);
   Result := -1;
 end;
@@ -150,16 +220,18 @@ procedure TYamlPuller.Parse(const AEvent: TYamlEvent; out AData: TJSONData);
 var
   Builder: TYamlJsonBuilder;
   Index: Integer;
+  All: TArray<TYamlEventEx>;
 begin
   AData := nil;
-  Index := FindEventIndex(AEvent);
+  All := BuildLog;
+  Index := FindEventIndex(All, AEvent);
   if Index < 0 then
     raise EYamlParserError.Create('The event is not part of this stream');
   Builder := TYamlJsonBuilder.Create;
   try
     // BuildSection returns false when the event starts no value, so AData
     // stays nil in that case.
-    Builder.BuildSection(FEvents, Index, AData);
+    Builder.BuildSection(All, Index, AData);
   finally
     Builder.Free;
   end;
