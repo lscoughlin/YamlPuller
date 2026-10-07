@@ -6,8 +6,8 @@ Input layer: bytes to characters (plan story S01).
 @br
 Four data sources, BOM detection, BOM-less detection, line-break
   normalization, and a lazy line reader with a running line number.
-The line reader holds the line start offsets, not a copy of each line,
-  so a pull parse does not buffer a second copy of the document.
+TYamlLineReader marks the pull boundary: the scanner asks for one physical
+  line at a time, so the puller reads only the lines that it needs.
 }
 unit YamlPuller.Input;
 
@@ -19,6 +19,25 @@ uses
   SysUtils, Classes, YamlPuller.Errors;
 
 type
+  TYamlInput = class;
+
+  /// a lazy line reader. The reader yields one physical line at a time. The
+  /// puller uses one reader for the whole stream, so the puller reads only
+  /// the lines that it needs.
+  TYamlLineReader = class
+  private
+    FInput: TYamlInput;
+    FHasPushBack: Boolean;
+    FPushBack: UnicodeString;
+    FPushBackNo: Integer;
+  public
+    constructor Create(AInput: TYamlInput);
+    /// the next line and its 1-based number. The reader advances.
+    function NextLine(out ALine: UnicodeString; out ANumber: Integer): Boolean;
+    /// put one line back for the next read
+    procedure PushBack(const ALine: UnicodeString; ANumber: Integer);
+  end;
+
   /// the input layer for one document source
   TYamlInput = class
   private
@@ -36,6 +55,8 @@ type
     class function FromBytes(const ABytes: TBytes): TYamlInput;
     /// read from a UTF-8 string
     class function FromString(const AText: UTF8String): TYamlInput;
+    /// read from text that is already decoded and normalized
+    class function FromText(const AText: UnicodeString): TYamlInput;
     /// decode a byte buffer to normalized characters
     class function Decode(const ABytes: TBytes): UnicodeString;
     /// true when the line reader is at the end
@@ -232,6 +253,11 @@ begin
   Result := TYamlInput.Create(Decode(B));
 end;
 
+class function TYamlInput.FromText(const AText: UnicodeString): TYamlInput;
+begin
+  Result := TYamlInput.Create(AText);
+end;
+
 class function TYamlInput.FromStream(AStream: TStream): TYamlInput;
 var
   B: TBytes;
@@ -303,6 +329,36 @@ begin
   Result := PeekLine(ALine, ANumber);
   if Result then
     Inc(FLineIndex);
+end;
+
+{ TYamlLineReader }
+
+constructor TYamlLineReader.Create(AInput: TYamlInput);
+begin
+  inherited Create;
+  FInput := AInput;
+  FHasPushBack := False;
+end;
+
+function TYamlLineReader.NextLine(out ALine: UnicodeString;
+  out ANumber: Integer): Boolean;
+begin
+  if FHasPushBack then
+  begin
+    ALine := FPushBack;
+    ANumber := FPushBackNo;
+    FHasPushBack := False;
+    Exit(True);
+  end;
+  Result := FInput.NextLine(ALine, ANumber);
+end;
+
+procedure TYamlLineReader.PushBack(const ALine: UnicodeString;
+  ANumber: Integer);
+begin
+  FPushBack := ALine;
+  FPushBackNo := ANumber;
+  FHasPushBack := True;
 end;
 
 end.

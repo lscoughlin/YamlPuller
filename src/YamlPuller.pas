@@ -27,6 +27,7 @@ type
     FOwnsInput: Boolean;
     FEvents: array of TYamlEventEx;
     FIndex: Integer;
+    function FindEventIndex(const AEvent: TYamlEvent): Integer;
   public
     /// create a puller from a source. The puller releases the source when
     /// AOwnsInput is true.
@@ -36,8 +37,21 @@ type
     function Next: TYamlEvent;
     /// true while an event remains
     function HasNext: Boolean;
-    /// parse the whole source into an FCL JSON value
-    function Parse: TJSONData;
+    /// parse the whole source into an FCL JSON value. The caller releases
+    /// the result.
+    function Parse: TJSONData; overload;
+    /// parse the value that starts at AEvent. The caller releases AData.
+    ///
+    /// AData is the value of the node when AEvent is a mapping start, a
+    /// sequence start, a scalar, or an alias. AData is the value of the
+    /// whole document when AEvent is a document start. AData is nil when
+    /// AEvent is a stream start or an end event, because such an event
+    /// starts no value.
+    ///
+    /// An alias inside the value resolves to an anchor that is complete
+    /// before AEvent, in the same document. The event identifies the start
+    /// by its value, so AEvent must come from this puller.
+    procedure Parse(const AEvent: TYamlEvent; out AData: TJSONData); overload;
   end;
 
   /// the source factory. Each method returns a ready puller.
@@ -113,6 +127,39 @@ begin
   Builder := TYamlJsonBuilder.Create;
   try
     Result := Builder.Build(FEvents);
+  finally
+    Builder.Free;
+  end;
+end;
+
+function TYamlPuller.FindEventIndex(const AEvent: TYamlEvent): Integer;
+var
+  I: Integer;
+begin
+  for I := 0 to High(FEvents) do
+    if (FEvents[I].EventType = AEvent.EventType)
+      and (FEvents[I].Line = AEvent.Line)
+      and (FEvents[I].Column = AEvent.Column)
+      and (FEvents[I].NestLevel = AEvent.NestLevel)
+      and (FEvents[I].EventText = AEvent.EventText) then
+      Exit(I);
+  Result := -1;
+end;
+
+procedure TYamlPuller.Parse(const AEvent: TYamlEvent; out AData: TJSONData);
+var
+  Builder: TYamlJsonBuilder;
+  Index: Integer;
+begin
+  AData := nil;
+  Index := FindEventIndex(AEvent);
+  if Index < 0 then
+    raise EYamlParserError.Create('The event is not part of this stream');
+  Builder := TYamlJsonBuilder.Create;
+  try
+    // BuildSection returns false when the event starts no value, so AData
+    // stays nil in that case.
+    Builder.BuildSection(FEvents, Index, AData);
   finally
     Builder.Free;
   end;

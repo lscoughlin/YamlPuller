@@ -5,7 +5,10 @@ copyright: Copyright 2026 Liam Seamus Coughlin
 The JSON bridge: event stream to TJSONData (plan story S11).
 @br
 The bridge reads the event list and builds the FCL JSON tree. An alias
-  resolves to a copy of the anchored value. A cyclic alias is an error.
+resolves to a copy of the anchored value. A cyclic alias is an error.
+BuildSection builds only the value that starts at one event, for the
+  Parse(event, data) operation. The section sees the anchors that are
+  complete before it, in the same document.
 }
 unit YamlPuller.JSON;
 
@@ -31,6 +34,7 @@ type
     FIndex: Integer;
     FAnchors: array of TYamlAnchorBinding;
     FBuilding: TStringList;
+    FOwned: TList;
     FKeyResolver: TYamlSchemaResolver;
     FDepth: Integer;
     FMaxDepth: Integer;
@@ -42,11 +46,21 @@ type
     procedure Register(const AName: UTF8String; AValue: TJSONData);
     function Lookup(const AName: UTF8String): TJSONData;
     function IsBuilding(const AName: UTF8String): Boolean;
+    function IsNodeStart(const AEvent: TYamlEventEx): Boolean;
+    function FindNodeEnd(const AEvents: TArray<TYamlEventEx>;
+      AStart: Integer): Integer;
+    procedure CollectAnchors(const AEvents: TArray<TYamlEventEx>;
+      ABefore: Integer);
   public
     constructor Create;
     destructor Destroy; override;
     /// build the JSON value of every document in the event list
     function Build(const AEvents: TArray<TYamlEventEx>): TJSONData;
+    /// build the value that starts at the event at AStartIndex. An anchor
+    /// that is complete before AStartIndex is available to an alias inside
+    /// the value. Return true when a value is built.
+    function BuildSection(const AEvents: TArray<TYamlEventEx>;
+      AStartIndex: Integer; out AData: TJSONData): Boolean;
     /// the number of documents in the last build
     property DocumentCount: Integer read FDocCount;
     /// the maximum nesting depth of a document, or of an alias chain
@@ -59,15 +73,113 @@ constructor TYamlJsonBuilder.Create;
 begin
   inherited Create;
   FBuilding := TStringList.Create;
+  FOwned := TList.Create;
   FKeyResolver := TYamlSchemaResolver.Create;
   FMaxDepth := 1000;
 end;
 
 destructor TYamlJsonBuilder.Destroy;
+var
+  I: Integer;
 begin
+  for I := 0 to FOwned.Count - 1 do
+    TJSONData(FOwned[I]).Free;
+  FOwned.Free;
   FKeyResolver.Free;
   FBuilding.Free;
   inherited Destroy;
+end;
+
+function TYamlJsonBuilder.IsNodeStart(const AEvent: TYamlEventEx): Boolean;
+begin
+  Result := AEvent.EventType in
+    [yetMappingStart, yetSequenceStart, yetScalar, yetAlias];
+end;
+
+function TYamlJsonBuilder.FindNodeEnd(const AEvents: TArray<TYamlEventEx>;
+  AStart: Integer): Integer;
+var
+  Level, I: Integer;
+begin
+  if (AEvents[AStart].EventType <> yetMappingStart)
+    and (AEvents[AStart].EventType <> yetSequenceStart) then
+    Exit(AStart);
+  Level := AEvents[AStart].NestLevel;
+  for I := AStart + 1 to High(AEvents) do
+    if ((AEvents[I].EventType = yetMappingEnd)
+      or (AEvents[I].EventType = yetSequenceEnd))
+      and (AEvents[I].NestLevel = Level) then
+      Exit(I);
+  Result := High(AEvents) + 1;
+end;
+
+procedure TYamlJsonBuilder.CollectAnchors(const AEvents: TArray<TYamlEventEx>;
+  ABefore: Integer);
+var
+  I, E: Integer;
+  Value: TJSONData;
+begin
+  // the decision: an alias sees only the anchors that are complete before
+  // the section start. Build each anchored node that ends before that point.
+  // The built value stays in FOwned, because the anchor table points at it.
+  I := 0;
+  while I < ABefore do
+  begin
+    if IsNodeStart(AEvents[I]) and (AEvents[I].Anchor <> '') then
+    begin
+      E := FindNodeEnd(AEvents, I);
+      if E < ABefore then
+      begin
+        FIndex := I;
+        Value := BuildNode;
+        FOwned.Add(Value);
+        I := E + 1;
+        Continue;
+      end;
+    end;
+    Inc(I);
+  end;
+end;
+
+function TYamlJsonBuilder.BuildSection(const AEvents: TArray<TYamlEventEx>;
+  AStartIndex: Integer; out AData: TJSONData): Boolean;
+var
+  Start, J: Integer;
+begin
+  AData := nil;
+  FEvents := AEvents;
+  FIndex := 0;
+  SetLength(FAnchors, 0);
+  Start := AStartIndex;
+  if (Start < 0) or (Start > High(AEvents)) then
+    Exit(False);
+  CollectAnchors(AEvents, Start);
+  case AEvents[Start].EventType of
+    yetMappingStart, yetSequenceStart, yetScalar, yetAlias:
+      begin
+        FIndex := Start;
+        AData := BuildNode;
+        Result := True;
+      end;
+    yetDocumentStart:
+      begin
+        J := Start + 1;
+        if (J > High(AEvents)) or (AEvents[J].EventType = yetDocumentEnd) then
+        begin
+          AData := TJSONNull.Create;
+          Result := True;
+        end
+        else
+        begin
+          FIndex := J;
+          AData := BuildNode;
+          Result := True;
+        end;
+      end;
+  else
+    // the stream start and every end event begin no value
+    Result := False;
+  end;
 end;
 
 procedure TYamlJsonBuilder.Register(const AName: UTF8String; AValue: TJSONData);
