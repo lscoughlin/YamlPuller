@@ -1,0 +1,208 @@
+# YamlPuller — Taskfile entry points.
+#
+# Mirrors the Makefile targets and adds the release sequence.
+#
+#   task              list tasks
+#   task build        compile the library units into bin/
+#   task test         build + run the fpcunit suite
+#   task examples     build + run each example program
+#   task check        the local gate: test + examples
+#   task version      print the version from src/YamlPuller.pas
+#   task dist         write the source zip of the tagged version
+#   task release      tag the version and publish a GitHub release
+#   task clean        remove build outputs
+#
+# The version has one source: the constant YAML_PULLER_VERSION in
+# src/YamlPuller.pas. The release task reads that constant. The package
+# file YamlPuller.lpk holds the same version in its own form.
+#
+# Environment overrides (the same names as the Makefile): FPC, UNITS, BIN.
+version: '3'
+
+vars:
+  FPC:
+    sh: echo "${FPC:-fpc}"
+  UNITS:
+    sh: echo "${UNITS:-/usr/local/lib/fpc/3.2.4/units/aarch64-darwin}"
+  BIN: '{{.BIN | default "bin"}}'
+  DIST: dist
+  VERSION:
+    sh: sed -n "s/.*YAML_PULLER_VERSION *= *'\([^']*\)'.*/\1/p" src/YamlPuller.pas | head -1
+  FPCFLAGS: '-Mdelphi -vw -Fu./src -Fu{{.UNITS}}/fcl-fpcunit -Fu{{.UNITS}}/fcl-json -Fu{{.UNITS}}/fcl-base -Fu{{.UNITS}}/rtl -Fu{{.UNITS}}/rtl-objpas -Fu{{.UNITS}}/rtl-extra'
+  EXAMPLES: 'example_string example_bytes example_stream example_file example_events example_section'
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+    silent: true
+
+  build:
+    desc: Compile the library units into bin/
+    cmds:
+      - mkdir -p {{.BIN}}
+      - '{{.FPC}} {{.FPCFLAGS}} -Cn -FE{{.BIN}} -FU{{.BIN}} src/YamlPuller.pas'
+    sources:
+      - src/*.pas
+    generates:
+      - '{{.BIN}}/YamlPuller.ppu'
+
+  test:
+    desc: Build the library units and run the fpcunit suite
+    deps:
+      - build
+    cmds:
+      - '{{.FPC}} {{.FPCFLAGS}} -Fu./test -FE{{.BIN}} -FU{{.BIN}} test/YamlPuller.RunTests.pas'
+      - '{{.BIN}}/YamlPuller.RunTests --all --format=plain --sparse'
+
+  examples:
+    desc: Build and run each example program
+    deps:
+      - build
+    cmds:
+      - |
+        set -e
+        for ex in {{.EXAMPLES}}; do
+          {{.FPC}} {{.FPCFLAGS}} -FE{{.BIN}} -FU{{.BIN}} "examples/$ex.pas" >/dev/null
+        done
+        for ex in {{.EXAMPLES}}; do
+          "{{.BIN}}/$ex" >/dev/null
+        done
+        echo "examples: PASS"
+
+  check:
+    desc: The local gate — unit suite and every example
+    cmds:
+      - task: test
+      - task: examples
+
+  version:
+    desc: Print the version from src/YamlPuller.pas
+    cmds:
+      - echo "{{.VERSION}}"
+    silent: true
+
+  tag:
+    desc: Create the annotated tag for the current version
+    cmds:
+      - |
+        set -e
+        tag="v{{.VERSION}}"
+        if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+          echo "the tag $tag already exists."
+        else
+          git tag -a "$tag" -m "YamlPuller {{.VERSION}}"
+          echo "created the tag $tag."
+        fi
+        git push origin main
+        git push origin "$tag"
+
+  dist:
+    desc: Write the source zip of the tagged version into dist/
+    cmds:
+      - |
+        set -e
+        tag="v{{.VERSION}}"
+        if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+          echo "the tag $tag does not exist. Run 'task tag' first." >&2
+          exit 1
+        fi
+        mkdir -p {{.DIST}}
+        # git archive holds the files under version control only, so the
+        # zip holds no build output and no ignored file.
+        git archive --format=zip --prefix="YamlPuller-{{.VERSION}}/" "$tag" \
+          -o "{{.DIST}}/YamlPuller-{{.VERSION}}-sources.zip"
+        echo "wrote {{.DIST}}/YamlPuller-{{.VERSION}}-sources.zip"
+
+  release:
+    desc: Tag the version and publish a GitHub release with the source zip
+    cmds:
+      - |
+        set -e
+        ver="{{.VERSION}}"
+        tag="v$ver"
+        zip="{{.DIST}}/YamlPuller-$ver-sources.zip"
+
+        # the release tags the committed state, so the tree must be clean
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "the working tree is not clean. Commit or stash the changes first." >&2
+          exit 1
+        fi
+
+        if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+          echo "the tag $tag already exists."
+        else
+          git tag -a "$tag" -m "YamlPuller $ver"
+          echo "created the tag $tag."
+        fi
+        git push origin main
+        git push origin "$tag"
+
+        mkdir -p {{.DIST}}
+        git archive --format=zip --prefix="YamlPuller-$ver/" "$tag" -o "$zip"
+        echo "wrote $zip"
+
+        if gh release view "$tag" >/dev/null 2>&1; then
+          echo "the release $tag already exists. Upload the asset with:"
+          echo "  gh release upload $tag $zip --clobber"
+          exit 0
+        fi
+
+        gh release create "$tag" \
+          --title "YamlPuller $ver" \
+          --notes-file - \
+          "$zip" <<NOTES
+        A YAML 1.2 pull parser for Object Pascal (Free Pascal / Lazarus), with an FCL JSON bridge.
+
+        ## What this release provides
+
+        Two classes. \`TYamlPullerFactory\` accepts a file handle, a \`TStream\`, a
+        \`TBytes\` value, or a UTF-8 string. \`TYamlPuller\` reads the event stream with
+        \`Next\` and \`HasNext\`, or builds the FCL JSON value with \`Parse\`.
+
+        - Ten event types, from \`yetStreamStart\` to \`yetAlias\`.
+        - A UTF-8 core-schema tag set, with the failsafe and JSON schemas selectable.
+        - Non-string mapping keys, converted to their canonical core-schema text.
+        - Aliases resolved by copy, a cyclic alias rejected with a line and column.
+        - Multi-document sources, read as a \`TJSONArray\` in document order.
+        - Errors carry a line number and a column number.
+
+        ## Streaming behavior
+
+        The event loop reads the source one document region at a time. A caller that
+        stops early does not read the later documents.
+
+        The \`Parse(event, data)\` operation builds the value that starts at one event.
+        The read stops at the end event of that subsection.
+
+        The \`Parse\` operation reads the whole stream, because it builds the value of
+        every document.
+
+        ## Compatibility notes
+
+        YAML 1.2 core schema rules apply. The keys \`y\`, \`yes\`, and \`on\` are strings,
+        not booleans. The merge key \`<<\` is an ordinary scalar key, because the merge
+        type is a YAML 1.1 extension. A 1.1-only tag such as \`!!timestamp\` raises an
+        error that names the tag.
+
+        ## Contents
+
+        The attached \`YamlPuller-$ver-sources.zip\` holds the sources of this tag:
+        \`src/\`, \`test/\`, \`examples/\`, \`doc/\`, the \`Makefile\`, the \`Taskfile.yaml\`,
+        the Lazarus package file, the README, and the Apache-2.0 license.
+
+        ## Build
+
+        \`make\` builds the library. \`make test\` runs the unit tests. \`make examples\`
+        runs each example. \`task check\` runs the unit tests and every example.
+
+        Requires Free Pascal 3.2.2 or later. The build is confirmed with 3.2.4.
+        NOTES
+
+        echo "published the release $tag"
+
+  clean:
+    desc: Remove build outputs
+    cmds:
+      - rm -rf {{.BIN}} {{.DIST}} src/*.o src/*.ppu test/*.o test/*.ppu examples/*.o examples/*.ppu

@@ -29,12 +29,14 @@ against the build.
 | JSON classes | FCL `fpjson` (`TJSONObject`, `TJSONArray`, and the scalar classes) |
 | Test framework | `fpcunit` with a console runner |
 | YAML version | YAML 1.2 |
-| Build tool | `make` |
+| Build tool | `make`, with `Taskfile.yaml` as an entry point |
 
 The `Makefile` is the build system. The `Makefile` compiles the library units
 in `src/` and runs the unit tests in `test/`. The repository also holds a
-Lazarus package file, `YamlPuller.lpk`. The package file lists the same source
-units and the `FCL` requirement. The Makefile build and the Lazarus build use
+`Taskfile.yaml`. The `Taskfile.yaml` mirrors the `Makefile` targets and adds
+the release sequence. The repository also holds a Lazarus package file,
+`YamlPuller.lpk`. The package file lists the same source units and the `FCL`
+requirement. The Makefile build, the Taskfile build, and the Lazarus build use
 the same units.
 
 ## Layer Model

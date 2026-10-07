@@ -20,12 +20,33 @@ The library consists of two main classes: `TYamlPullerFactory` and
 `src/`, runs the unit tests in `test/`, and runs the example programs in
 `examples/`. The `make examples` target compiles and runs each example.
 
+The repository also holds a Taskfile.yaml. It mirrors the `Makefile` targets
+and adds the release sequence. The Taskfile.yaml is an entry point, and the
+`Makefile` is the primary build system.
+
+| Task | Operation |
+|---|---|
+| `task build` | Compiles the library units into `bin/` |
+| `task test` | Builds the units and runs the unit tests |
+| `task examples` | Builds and runs each example |
+| `task check` | Runs `task test` and `task examples` |
+| `task version` | Prints the version from `src/YamlPuller.pas` |
+| `task tag` | Creates and pushes the annotated tag |
+| `task dist` | Writes the source zip of the tagged version |
+| `task release` | Tags the version and publishes a GitHub release |
+| `task clean` | Removes the build outputs |
+
+The version has one source, the constant `YAML_PULLER_VERSION` in
+`src/YamlPuller.pas`. The `task dist` and `task release` targets read that
+constant. The package file `YamlPuller.lpk` holds the same version in its own
+form.
+
 The repository also holds a Lazarus package file, `YamlPuller.lpk`. The
 package file lists the library units and the `FCL` requirement. A user opens
 the package in the Lazarus IDE to browse the units or to install the package.
 
-The `Makefile` is the primary build system. The `make` build and the Lazarus
-build use the same source units.
+The `Makefile` is the primary build system. The `make` build, the `task`
+build, and the Lazarus build use the same source units.
 
 ## TYamlPullerFactory
 
