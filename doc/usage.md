@@ -248,8 +248,11 @@ The value follows the start event:
 
 An alias inside the subsection resolves to an anchor that is complete before
 `event`, in the same document. The event identifies the start by its value.
-The event must come from the same puller. The operation reads the whole event
-stream to locate the event.
+The event must come from the same puller.
+
+The operation reads only the events that the subsection needs. The read stops
+at the end event of the subsection. A caller reads a subsection near the
+start of a large source without reading the later documents.
 
 ## Example: a Subsection
 
@@ -443,7 +446,6 @@ holds the lines from the current position to the next document start marker
 at column 0. The scanner reads a region, produces its tokens, and the parser
 produces the events of that region. The `Next` call reads the next region
 only when the current region has no more events.
-
 The event interface is a pull interface. The caller reads one event at a
 time. An early stop in the event loop does not read the later documents.
 
@@ -464,8 +466,8 @@ The memory that the puller holds follows this table:
 | The JSON tree | One value per node, for the `Parse` call only |
 
 The `Parse` operation reads the whole remaining source, because it builds the
-whole JSON value. The `Parse(event, data)` operation also reads the whole
-remaining source, because it locates the event by value.
+whole JSON value. The `Parse(event, data)` operation reads only the events of
+the subsection, because it stops at the end event of the subsection.
 
 ## Release of Resources
 

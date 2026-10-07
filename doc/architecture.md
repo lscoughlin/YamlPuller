@@ -128,7 +128,8 @@ README documents these operations as `Parse: TJSONData` and
 `Parse(event, data)`.
 
 The `Parse(event, data)` operation builds the value that starts at one event.
-The operation reads the whole event stream to locate the event. A node event
+The operation reads forward one document at a time until the event is in the
+event log. The read then stops at the end event of the node. A node event
 builds its node. A document start builds the whole document. A stream start
 and an end event start no value.
 

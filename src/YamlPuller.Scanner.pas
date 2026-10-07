@@ -642,13 +642,15 @@ begin
   try
     Ctx.State := Region;
     Ctx.Index := 0;
-    Inc(FDocumentsRead);
     LoadRegion(Ctx, FReader);
     if Length(Ctx.Lines) = 0 then
     begin
       FDone := True;
       Exit(nil);
     end;
+    // the count is the number of regions with content, so a read past the
+    // end of the source does not increase the count
+    Inc(FDocumentsRead);
     while Ctx.Index <= High(Ctx.Lines) do
     begin
       SkipBlank(Ctx);

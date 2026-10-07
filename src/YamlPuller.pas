@@ -31,10 +31,17 @@ type
     FIndex: Integer;
     FStreamDone: Boolean;
     FLog: TArray<TYamlEventEx>;
+    FDocEnds: TArray<Integer>;
     function FindEventIndex(const AEvents: TArray<TYamlEventEx>;
       const AEvent: TYamlEvent): Integer;
     function BuildLog: TArray<TYamlEventEx>;
+    /// fetch events until the event at AIndex has its node end in the log.
+    /// AData is the value of the node. The result is true when the node end
+    /// is in the log. The result is false when the stream ends first.
+    function BuildSectionFromLog(AIndex: Integer;
+      out AData: TJSONData): Boolean;
     function NextEvent: TYamlEventEx;
+    function GetDocumentsRead: Integer;
   public
     /// create a puller from a source. The puller releases the source when
     /// AOwnsInput is true.
@@ -59,6 +66,8 @@ type
     /// before AEvent, in the same document. The event identifies the start
     /// by its value, so AEvent must come from this puller.
     procedure Parse(const AEvent: TYamlEvent; out AData: TJSONData); overload;
+    /// the number of document regions that the puller has read
+    property DocumentsRead: Integer read GetDocumentsRead;
   end;
 
   /// the source factory. Each method returns a ready puller.
@@ -93,6 +102,7 @@ begin
   FIndex := 0;
   FStreamDone := False;
   SetLength(FLog, 0);
+  SetLength(FDocEnds, 0);
 end;
 
 destructor TYamlPuller.Destroy;
@@ -134,6 +144,11 @@ begin
   Result := FLog;
 end;
 
+function TYamlPuller.GetDocumentsRead: Integer;
+begin
+  Result := FScanner.DocumentsRead;
+end;
+
 function TYamlPuller.NextEvent: TYamlEventEx;
 var
   Tokens: TArray<TYamlToken>;
@@ -167,6 +182,13 @@ begin
       begin
         SetLength(FLog, Length(FLog) + 1);
         FLog[High(FLog)] := Part[I];
+        // record where each document ends, so the section operation can
+        // stop reading at a document boundary
+        if Part[I].EventType = yetDocumentEnd then
+        begin
+          SetLength(FDocEnds, Length(FDocEnds) + 1);
+          FDocEnds[High(FDocEnds)] := High(FLog);
+        end;
       end;
       Result := FEvents[FIndex];
       Inc(FIndex);
@@ -200,7 +222,6 @@ begin
     Builder.Free;
   end;
 end;
-
 function TYamlPuller.FindEventIndex(const AEvents: TArray<TYamlEventEx>;
   const AEvent: TYamlEvent): Integer;
 var
@@ -218,20 +239,75 @@ end;
 
 procedure TYamlPuller.Parse(const AEvent: TYamlEvent; out AData: TJSONData);
 var
-  Builder: TYamlJsonBuilder;
   Index: Integer;
-  All: TArray<TYamlEventEx>;
+  Ready: Boolean;
 begin
   AData := nil;
-  All := BuildLog;
-  Index := FindEventIndex(All, AEvent);
+  Index := FindEventIndex(FLog, AEvent);
+  // the event can be in a document that the puller has not read. Read
+  // forward one document at a time until the event is in the log, or the
+  // stream ends. The value needs only the events up to the node end, so
+  // the read stops at that point.
+  while (Index < 0) and (not FStreamDone) do
+  begin
+    NextEvent;
+    Index := FindEventIndex(FLog, AEvent);
+  end;
   if Index < 0 then
     raise EYamlParserError.Create('The event is not part of this stream');
+  // BuildSectionFromLog returns false when the event starts no value, so
+  // AData stays nil in that case.
+  Ready := BuildSectionFromLog(Index, AData);
+  if not Ready then
+    AData.Free;
+end;
+
+function TYamlPuller.BuildSectionFromLog(AIndex: Integer;
+  out AData: TJSONData): Boolean;
+var
+  Builder: TYamlJsonBuilder;
+  Need, EndIndex, K: Integer;
+begin
+  AData := nil;
+  Need := AIndex + 1;
+  if (FLog[AIndex].EventType = yetMappingStart)
+    or (FLog[AIndex].EventType = yetSequenceStart) then
+  begin
+    // the node needs its own matching end event
+    EndIndex := TYamlJsonBuilder.FindNodeEnd(FLog, AIndex);
+    while (EndIndex > High(FLog)) and (not FStreamDone) do
+    begin
+      NextEvent;
+      EndIndex := TYamlJsonBuilder.FindNodeEnd(FLog, AIndex);
+    end;
+    if EndIndex > High(FLog) then
+      Exit(False);
+    Need := EndIndex + 1;
+  end;
+  if FLog[AIndex].EventType = yetDocumentStart then
+  begin
+    // the document needs the first document end event after the start
+    EndIndex := -1;
+    while True do
+    begin
+      for K := 0 to High(FDocEnds) do
+        if FDocEnds[K] > AIndex then
+        begin
+          EndIndex := FDocEnds[K];
+          Break;
+        end;
+      if (EndIndex >= 0) or FStreamDone then
+        Break;
+      NextEvent;
+    end;
+    if EndIndex < 0 then
+      Exit(False);
+    Need := EndIndex + 1;
+  end;
   Builder := TYamlJsonBuilder.Create;
   try
-    // BuildSection returns false when the event starts no value, so AData
-    // stays nil in that case.
-    Builder.BuildSection(All, Index, AData);
+    AData := Builder.BuildSection(Copy(FLog, 0, Need), AIndex);
+    Result := AData <> nil;
   finally
     Builder.Free;
   end;

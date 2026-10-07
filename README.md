@@ -82,6 +82,8 @@ TYamlPuller:
     before `event`, in the same document.
   - The event identifies the start by its value. The event must come from
     the same puller.
+  - The operation reads only the events that the subsection needs. The read
+    stops at the end event of the subsection.
 
 ## TYamlEvent
 

@@ -40,6 +40,8 @@ type
     procedure TestSectionMultiDocument;
     procedure TestSectionNestedStart;
     procedure TestSectionCallerOwnsResult;
+    procedure TestSectionStopsAtNodeEnd;
+    procedure TestSectionMidStreamStops;
   end;
 
 implementation
@@ -343,6 +345,65 @@ begin
     Puller.Parse(Ev, Data);
     AssertTrue('the caller received a value', Data <> nil);
     Data.Free;
+  finally
+    Puller.Free;
+  end;
+end;
+
+procedure TSectionTest.TestSectionStopsAtNodeEnd;
+var
+  Puller: TYamlPuller;
+  Ev: TYamlEvent;
+  Data: TJSONData;
+  Text: UTF8String;
+begin
+  // a three-document source. The section of document one needs the events
+  // of document one only. The puller must not read document two or three.
+  Text := 'a: 1'#10'---'#10'b: 2'#10'---'#10'c: 3'#10;
+  Puller := TYamlPullerFactory.FromString(Text);
+  try
+    Ev := NthEvent(Puller, yetMappingStart, 1);
+    AssertEquals('the first document is read', 1, Puller.DocumentsRead);
+    Puller.Parse(Ev, Data);
+    try
+      AssertEquals('{"a":1}', Minify(Data.AsJSON));
+      AssertEquals('the section does not read the next document', 1,
+        Puller.DocumentsRead);
+    finally
+      Data.Free;
+    end;
+    // the puller still reads the remaining documents after the section
+    while Puller.HasNext do
+      Puller.Next;
+    AssertEquals('the event loop reads the remaining documents', 3,
+      Puller.DocumentsRead);
+  finally
+    Puller.Free;
+  end;
+end;
+
+procedure TSectionTest.TestSectionMidStreamStops;
+var
+  Puller: TYamlPuller;
+  Ev: TYamlEvent;
+  Data: TJSONData;
+  Text: UTF8String;
+begin
+  // the section of document two needs documents one and two. It must not
+  // read document three.
+  Text := 'a: 1'#10'---'#10'b: 2'#10'---'#10'c: 3'#10;
+  Puller := TYamlPullerFactory.FromString(Text);
+  try
+    Ev := NthEvent(Puller, yetMappingStart, 2);
+    AssertEquals('the second document is read', 2, Puller.DocumentsRead);
+    Puller.Parse(Ev, Data);
+    try
+      AssertEquals('{"b":2}', Minify(Data.AsJSON));
+      AssertEquals('the third document is not read', 2,
+        Puller.DocumentsRead);
+    finally
+      Data.Free;
+    end;
   finally
     Puller.Free;
   end;

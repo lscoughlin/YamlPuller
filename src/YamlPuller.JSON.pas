@@ -47,20 +47,22 @@ type
     function Lookup(const AName: UTF8String): TJSONData;
     function IsBuilding(const AName: UTF8String): Boolean;
     function IsNodeStart(const AEvent: TYamlEventEx): Boolean;
-    function FindNodeEnd(const AEvents: TArray<TYamlEventEx>;
-      AStart: Integer): Integer;
     procedure CollectAnchors(const AEvents: TArray<TYamlEventEx>;
       ABefore: Integer);
   public
+    /// the index of the end event that matches the node at AStart. The
+    /// result is High(AEvents) + 1 when the list holds no matching end.
+    class function FindNodeEnd(const AEvents: TArray<TYamlEventEx>;
+      AStart: Integer): Integer;
     constructor Create;
     destructor Destroy; override;
     /// build the JSON value of every document in the event list
     function Build(const AEvents: TArray<TYamlEventEx>): TJSONData;
     /// build the value that starts at the event at AStartIndex. An anchor
     /// that is complete before AStartIndex is available to an alias inside
-    /// the value. Return true when a value is built.
+    /// the value. The result is nil when the event starts no value.
     function BuildSection(const AEvents: TArray<TYamlEventEx>;
-      AStartIndex: Integer; out AData: TJSONData): Boolean;
+      AStartIndex: Integer): TJSONData;
     /// the number of documents in the last build
     property DocumentCount: Integer read FDocCount;
     /// the maximum nesting depth of a document, or of an alias chain
@@ -96,7 +98,7 @@ begin
     [yetMappingStart, yetSequenceStart, yetScalar, yetAlias];
 end;
 
-function TYamlJsonBuilder.FindNodeEnd(const AEvents: TArray<TYamlEventEx>;
+class function TYamlJsonBuilder.FindNodeEnd(const AEvents: TArray<TYamlEventEx>;
   AStart: Integer): Integer;
 var
   Level, I: Integer;
@@ -142,43 +144,38 @@ begin
 end;
 
 function TYamlJsonBuilder.BuildSection(const AEvents: TArray<TYamlEventEx>;
-  AStartIndex: Integer; out AData: TJSONData): Boolean;
+  AStartIndex: Integer): TJSONData;
 var
   Start, J: Integer;
 begin
-  AData := nil;
+  Result := nil;
   FEvents := AEvents;
   FIndex := 0;
   SetLength(FAnchors, 0);
   Start := AStartIndex;
   if (Start < 0) or (Start > High(AEvents)) then
-    Exit(False);
+    Exit;
   CollectAnchors(AEvents, Start);
   case AEvents[Start].EventType of
     yetMappingStart, yetSequenceStart, yetScalar, yetAlias:
       begin
         FIndex := Start;
-        AData := BuildNode;
-        Result := True;
+        Result := BuildNode;
       end;
     yetDocumentStart:
       begin
         J := Start + 1;
         if (J > High(AEvents)) or (AEvents[J].EventType = yetDocumentEnd) then
-        begin
-          AData := TJSONNull.Create;
-          Result := True;
-        end
+          Result := TJSONNull.Create
         else
         begin
           FIndex := J;
-          AData := BuildNode;
-          Result := True;
+          Result := BuildNode;
         end;
       end;
   else
     // the stream start and every end event begin no value
-    Result := False;
+    Result := nil;
   end;
 end;
 
