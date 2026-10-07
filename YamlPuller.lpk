@@ -7,7 +7,7 @@
     <Author Value="Liam Seamus Coughlin"/>
     <License Value="Apache-2.0"/>
     <Description Value="A YAML 1.2 pull parser for Object Pascal."/>
-    <Version Major="1" Minor="0"/>
+    <Version Major="0" Minor="2" Release="0" Build="0"/>
     <Files Count="13">
       <Item1>
         <Filename Value="src/YamlPuller.pas"/>
