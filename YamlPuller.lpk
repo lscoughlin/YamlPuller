@@ -8,7 +8,7 @@
     <License Value="Apache-2.0"/>
     <Description Value="A YAML 1.2 pull parser for Object Pascal."/>
     <Version Major="1" Minor="0"/>
-    <Files Count="7">
+    <Files Count="13">
       <Item1>
         <Filename Value="src/YamlPuller.pas"/>
         <UnitName Value="YamlPuller"/>
@@ -22,21 +22,45 @@
         <UnitName Value="YamlPuller.Events"/>
       </Item3>
       <Item4>
-        <Filename Value="src/YamlPuller.Scanner.pas"/>
-        <UnitName Value="YamlPuller.Scanner"/>
+        <Filename Value="src/YamlPuller.Scanner.Core.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Core"/>
       </Item4>
       <Item5>
-        <Filename Value="src/YamlPuller.Parser.pas"/>
-        <UnitName Value="YamlPuller.Parser"/>
+        <Filename Value="src/YamlPuller.Scanner.pas"/>
+        <UnitName Value="YamlPuller.Scanner"/>
       </Item5>
       <Item6>
-        <Filename Value="src/YamlPuller.Schema.pas"/>
-        <UnitName Value="YamlPuller.Schema"/>
+        <Filename Value="src/YamlPuller.Scanner.Comments.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Comments"/>
       </Item6>
       <Item7>
+        <Filename Value="src/YamlPuller.Scanner.Scalar.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Scalar"/>
+      </Item7>
+      <Item8>
+        <Filename Value="src/YamlPuller.Scanner.Block.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Block"/>
+      </Item8>
+      <Item9>
+        <Filename Value="src/YamlPuller.Scanner.Flow.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Flow"/>
+      </Item9>
+      <Item10>
+        <Filename Value="src/YamlPuller.Parser.pas"/>
+        <UnitName Value="YamlPuller.Parser"/>
+      </Item10>
+      <Item11>
+        <Filename Value="src/YamlPuller.Schema.pas"/>
+        <UnitName Value="YamlPuller.Schema"/>
+      </Item11>
+      <Item12>
+        <Filename Value="src/YamlPuller.JSON.pas"/>
+        <UnitName Value="YamlPuller.JSON"/>
+      </Item12>
+      <Item13>
         <Filename Value="src/YamlPuller.Errors.pas"/>
         <UnitName Value="YamlPuller.Errors"/>
-      </Item7>
+      </Item13>
     </Files>
     <RequiredPkgs Count="1">
       <Item1>
