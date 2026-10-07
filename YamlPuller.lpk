@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <Package Version="5">
+    <PathDelim Value="/"/>
+    <Name Value="YamlPuller"/>
+    <Type Value="Package"/>
+    <Author Value="Liam Seamus Coughlin"/>
+    <License Value="Apache-2.0"/>
+    <Description Value="A YAML 1.2 pull parser for Object Pascal."/>
+    <Version Major="1" Minor="0"/>
+    <Files Count="7">
+      <Item1>
+        <Filename Value="src/YamlPuller.pas"/>
+        <UnitName Value="YamlPuller"/>
+      </Item1>
+      <Item2>
+        <Filename Value="src/YamlPuller.Input.pas"/>
+        <UnitName Value="YamlPuller.Input"/>
+      </Item2>
+      <Item3>
+        <Filename Value="src/YamlPuller.Events.pas"/>
+        <UnitName Value="YamlPuller.Events"/>
+      </Item3>
+      <Item4>
+        <Filename Value="src/YamlPuller.Scanner.pas"/>
+        <UnitName Value="YamlPuller.Scanner"/>
+      </Item4>
+      <Item5>
+        <Filename Value="src/YamlPuller.Parser.pas"/>
+        <UnitName Value="YamlPuller.Parser"/>
+      </Item5>
+      <Item6>
+        <Filename Value="src/YamlPuller.Schema.pas"/>
+        <UnitName Value="YamlPuller.Schema"/>
+      </Item6>
+      <Item7>
+        <Filename Value="src/YamlPuller.Errors.pas"/>
+        <UnitName Value="YamlPuller.Errors"/>
+      </Item7>
+    </Files>
+    <RequiredPkgs Count="1">
+      <Item1>
+        <PackageName Value="FCL"/>
+      </Item1>
+    </RequiredPkgs>
+    <UsagePkgs Count="0"/>
+    <UnitPath Count="1">
+      <Item1>
+        <UnitPath Value="src"/>
+      </Item1>
+    </UnitPath>
+    <CompilerOptions>
+      <Version Value="11"/>
+      <Target>
+        <Filename Value="lib/$(TargetCPU)-$(TargetOS)"/>
+      </Target>
+      <SearchPaths>
+        <IncludeFiles Value="$(ProjOutDir)"/>
+        <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
+      </SearchPaths>
+    </CompilerOptions>
+    <PublishOptions>
+      <Version Value="2"/>
+    </PublishOptions>
+  </Package>
+</CONFIG>
