@@ -13,9 +13,12 @@ The library has these requirements:
 - Free Pascal 3.2.2 or later.
 - The compiler mode `{$mode delphi}`.
 - The FCL unit `fpjson` for the `Parse` operation.
+- The program `make` for the build.
 
-The build and the unit installation are established at first use. The README
-describes the four data sources.
+The `make` command is the build system. The `make` command compiles the
+library units. A second target runs the unit tests. The `YamlPuller.lpk`
+package file gives the same units to the Lazarus IDE. The README describes
+the four data sources.
 
 ## The Four Factory Methods
 

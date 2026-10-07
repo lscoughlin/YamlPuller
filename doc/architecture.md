@@ -25,10 +25,13 @@ the assumed environment. A later story confirms or corrects each assumption.
 | JSON classes | FCL `fpjson` (`TJSONObject`, `TJSONArray`, and the scalar classes) |
 | Test framework | `fpcunit` with a console runner |
 | YAML version | YAML 1.2 |
+| Build tool | `make` |
 
-The build system is not yet selected. The plan establishes the build system in
-the first story. This document describes the build system only after that
-story is complete.
+The `Makefile` is the build system. The `Makefile` compiles the library units
+in `src/` and runs the unit tests in `test/`. The repository also holds a
+Lazarus package file, `YamlPuller.lpk`. The package file lists the same source
+units and the `FCL` requirement. The Makefile build and the Lazarus build use
+the same units.
 
 ## Layer Model
 
