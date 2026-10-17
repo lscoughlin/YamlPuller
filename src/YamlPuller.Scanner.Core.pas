@@ -109,7 +109,6 @@ implementation
 function NewToken(AKind: TYamlTokenKind; const AText: UnicodeString;
   ALine, AColumn: Integer): TYamlToken;
 begin
-  FillChar(Result, SizeOf(Result), 0);
   Result.Kind := AKind;
   Result.Text := AText;
   Result.ScalarStyle := yssPlain;

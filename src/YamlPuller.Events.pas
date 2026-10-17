@@ -31,6 +31,15 @@ type
     yetScalar,
     yetAlias);
 
+  /// the resolved type of a scalar
+  TYamlScalarType = (
+    ystUnresolved,
+    ystNull,
+    ystBool,
+    ystInt,
+    ystFloat,
+    ystStr);
+
   /// the public event record. The README fixes these fields.
   TYamlEvent = record
     EventType: TYamlEventType;
@@ -40,16 +49,9 @@ type
     NestLevel: Integer;
     Line: Integer;
     Column: Integer;
+    /// the resolved type of a scalar event. Other events have ystUnresolved.
+    ScalarType: TYamlScalarType;
   end;
-
-  /// the resolved type of a scalar
-  TYamlScalarType = (
-    ystUnresolved,
-    ystNull,
-    ystBool,
-    ystInt,
-    ystFloat,
-    ystStr);
 
   /// the selectable schema
   TYamlSchemaKind = (yscCore, yscFailsafe, yscJson);
@@ -88,10 +90,13 @@ implementation
 function MakeEvent(AType: TYamlEventType; const AText: UTF8String;
   ANestLevel, ALine, AColumn: Integer): TYamlEventEx;
 begin
-  FillChar(Result, SizeOf(Result), 0);
+  // no FillChar: Result can be a variable that holds strings, and FillChar
+  // would drop them without releasing them
   Result.EventType := AType;
   Result.EventText := AText;
   Result.ScalarType := ystUnresolved;
+  Result.Tag := '';
+  Result.Anchor := '';
   Result.NestLevel := ANestLevel;
   Result.Line := ALine;
   Result.Column := AColumn;
@@ -99,12 +104,12 @@ end;
 
 function PublicEvent(const AEvent: TYamlEventEx): TYamlEvent;
 begin
-  FillChar(Result, SizeOf(Result), 0);
   Result.EventType := AEvent.EventType;
   Result.EventText := AEvent.EventText;
   Result.NestLevel := AEvent.NestLevel;
   Result.Line := AEvent.Line;
   Result.Column := AEvent.Column;
+  Result.ScalarType := AEvent.ScalarType;
 end;
 
 end.

@@ -10,6 +10,7 @@ backup/
 dist/
 
 # --- Lazarus package build outputs -------------------------------------------
+/YamlPuller.pas
 # The generated registration unit and the file list are derived from the
 # package file, which is the authoritative source.
 packagefiles.xml

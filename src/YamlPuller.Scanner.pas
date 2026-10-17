@@ -99,20 +99,17 @@ end;
 function FindKeyColon(const ALine: UnicodeString): Integer;
 var
   I: Integer;
-  InSingle, InDouble: Boolean;
 begin
   Result := 0;
-  InSingle := False;
-  InDouble := False;
-  for I := 1 to Length(ALine) do
+  I := 1;
+  while I <= Length(ALine) do
   begin
-    if ALine[I] = '''' then
-      InSingle := not InSingle
-    else if ALine[I] = '"' then
-      InDouble := not InDouble
-    else if (ALine[I] = ':') and not InSingle and not InDouble then
+    if IsQuoteStart(ALine, I) then
+      I := QuotedEnd(ALine, I)
+    else if ALine[I] = ':' then
       if (I = Length(ALine)) or (ALine[I + 1] = ' ') then
         Exit(I);
+    Inc(I);
   end;
 end;
 
@@ -211,7 +208,7 @@ var
   Depth: Integer;
   Buf: UnicodeString;
   Entries: TArray<UnicodeString>;
-  I, P: Integer;
+  I, P, Q: Integer;
   Entry: UnicodeString;
 begin
   CursorInit(C, AText, ALine);
@@ -232,6 +229,17 @@ begin
   while (not CursorAtEnd(C)) and (Depth > 0) do
   begin
     Ch := CursorChar(C);
+    if IsQuoteStart(C.S, C.Pos) then
+    begin
+      // a quoted scalar can hold flow indicators. Copy it whole.
+      Q := QuotedEnd(C.S, C.Pos);
+      while C.Pos <= Q do
+      begin
+        Buf := Buf + CursorChar(C);
+        CursorAdvance(C);
+      end;
+      Continue;
+    end;
     if IsFlowIndicator(Ch) then
     begin
       case Ch of
@@ -257,7 +265,7 @@ begin
     end
     else
     begin
-      P := FindKeyColon(Entry);
+      P := FindFlowKeyColon(Entry);
       if P > 0 then
       begin
         Ctx.State.AddSimple(ytkKey, '', ALine, 1);

@@ -17,7 +17,7 @@ interface
 uses
   SysUtils, Classes, fpjson, YamlPuller.Events, YamlPuller.Errors,
   YamlPuller.Input, YamlPuller.Scanner.Core, YamlPuller.Scanner,
-  YamlPuller.Parser, YamlPuller.JSON;
+  YamlPuller.Parser, YamlPuller.JSON, YamlPuller.Schema;
 
 type
   /// the puller
@@ -32,6 +32,7 @@ type
     FStreamDone: Boolean;
     FLog: TArray<TYamlEventEx>;
     FDocEnds: TArray<Integer>;
+    FKeepLog: Boolean;
     function FindEventIndex(const AEvents: TArray<TYamlEventEx>;
       const AEvent: TYamlEvent): Integer;
     function BuildLog: TArray<TYamlEventEx>;
@@ -42,6 +43,8 @@ type
       out AData: TJSONData): Boolean;
     function NextEvent: TYamlEventEx;
     function GetDocumentsRead: Integer;
+    procedure ParseWindow(const AEvent: TYamlEvent; out AData: TJSONData);
+    procedure MoveCursorPast(const AEvent: TYamlEvent);
   public
     /// create a puller from a source. The puller releases the source when
     /// AOwnsInput is true.
@@ -68,6 +71,11 @@ type
     procedure Parse(const AEvent: TYamlEvent; out AData: TJSONData); overload;
     /// the number of document regions that the puller has read
     property DocumentsRead: Integer read GetDocumentsRead;
+    /// true while the puller keeps a log of every event. The initial value is
+    /// true. With false, Parse(event, data) accepts only the event that Next
+    /// returned last, and the memory follows the size of one document. The
+    /// property is set before the first call of Next.
+    property KeepEventLog: Boolean read FKeepLog write FKeepLog;
   end;
 
   /// the source factory. Each method returns a ready puller.
@@ -78,6 +86,11 @@ type
     class function FromBytes(const ABytes: TBytes): TYamlPuller;
     class function FromString(const AText: UTF8String): TYamlPuller;
   end;
+
+/// the member name of a scalar event that is a mapping key. A string key is
+/// its text. A key of another core type is its canonical core-schema text.
+/// This is the name that Parse gives to the member.
+function YamlMemberName(const AEvent: TYamlEvent): UTF8String;
 
 /// a short name for each event type
 function EventTypeName(AType: TYamlEventType): string;
@@ -93,6 +106,25 @@ begin
   Result := YamlEventTypeName[AType];
 end;
 
+function YamlMemberName(const AEvent: TYamlEvent): UTF8String;
+var
+  Resolver: TYamlSchemaResolver;
+begin
+  case AEvent.ScalarType of
+    ystNull, ystBool, ystInt, ystFloat:
+      begin
+        Resolver := TYamlSchemaResolver.Create;
+        try
+          Result := Resolver.Canonical(AEvent.EventText, AEvent.ScalarType);
+        finally
+          Resolver.Free;
+        end;
+      end;
+  else
+    Result := AEvent.EventText;
+  end;
+end;
+
 { TYamlPuller }
 
 constructor TYamlPuller.Create(AInput: TYamlInput; AOwnsInput: Boolean);
@@ -105,6 +137,7 @@ begin
   SetLength(FEvents, 0);
   FIndex := 0;
   FStreamDone := False;
+  FKeepLog := True;
   SetLength(FLog, 0);
   SetLength(FDocEnds, 0);
 end;
@@ -182,18 +215,19 @@ begin
       FEvents := Part;
       FIndex := 0;
       // the fetched events join the log at the fetch point
-      for I := 0 to High(Part) do
-      begin
-        SetLength(FLog, Length(FLog) + 1);
-        FLog[High(FLog)] := Part[I];
-        // record where each document ends, so the section operation can
-        // stop reading at a document boundary
-        if Part[I].EventType = yetDocumentEnd then
+      if FKeepLog then
+        for I := 0 to High(Part) do
         begin
-          SetLength(FDocEnds, Length(FDocEnds) + 1);
-          FDocEnds[High(FDocEnds)] := High(FLog);
+          SetLength(FLog, Length(FLog) + 1);
+          FLog[High(FLog)] := Part[I];
+          // record where each document ends, so the section operation can
+          // stop reading at a document boundary
+          if Part[I].EventType = yetDocumentEnd then
+          begin
+            SetLength(FDocEnds, Length(FDocEnds) + 1);
+            FDocEnds[High(FDocEnds)] := High(FLog);
+          end;
         end;
-      end;
       Result := FEvents[FIndex];
       Inc(FIndex);
       Exit;
@@ -218,12 +252,17 @@ var
   Builder: TYamlJsonBuilder;
   All: TArray<TYamlEventEx>;
 begin
+  if (not FKeepLog) and ((FIndex > 0) or (Length(FEvents) > 0)) then
+    raise EYamlParserError.Create(
+      'The event log is off. The puller already returned an event');
   Builder := TYamlJsonBuilder.Create;
   try
     All := BuildLog;
     Result := Builder.Build(All);
   finally
     Builder.Free;
+    if not FKeepLog then
+      SetLength(FLog, 0);
   end;
 end;
 function TYamlPuller.FindEventIndex(const AEvents: TArray<TYamlEventEx>;
@@ -247,6 +286,11 @@ var
   Ready: Boolean;
 begin
   AData := nil;
+  if not FKeepLog then
+  begin
+    ParseWindow(AEvent, AData);
+    Exit;
+  end;
   Index := FindEventIndex(FLog, AEvent);
   // the event can be in a document that the puller has not read. Read
   // forward one document at a time until the event is in the log, or the
@@ -263,7 +307,80 @@ begin
   // AData stays nil in that case.
   Ready := BuildSectionFromLog(Index, AData);
   if not Ready then
-    AData.Free;
+    AData.Free
+  else
+    MoveCursorPast(AEvent);
+end;
+
+function SameEvent(const A: TYamlEventEx; const B: TYamlEvent): Boolean;
+begin
+  Result := (A.EventType = B.EventType) and (A.Line = B.Line)
+    and (A.Column = B.Column) and (A.NestLevel = B.NestLevel)
+    and (A.EventText = B.EventText);
+end;
+
+procedure TYamlPuller.MoveCursorPast(const AEvent: TYamlEvent);
+var
+  EndIndex: Integer;
+begin
+  // the cursor moves only for the event that Next returned last, and only
+  // for a collection. A scalar and an alias end at their own event.
+  if (FIndex < 1) or (FIndex > Length(FEvents)) then
+    Exit;
+  if not SameEvent(FEvents[FIndex - 1], AEvent) then
+    Exit;
+  if (AEvent.EventType <> yetMappingStart)
+    and (AEvent.EventType <> yetSequenceStart) then
+    Exit;
+  EndIndex := TYamlJsonBuilder.FindNodeEnd(FEvents, FIndex - 1);
+  if EndIndex <= High(FEvents) then
+    FIndex := EndIndex + 1;
+end;
+
+procedure TYamlPuller.ParseWindow(const AEvent: TYamlEvent;
+  out AData: TJSONData);
+var
+  Index, Need, EndIndex, K: Integer;
+  Builder: TYamlJsonBuilder;
+begin
+  AData := nil;
+  case AEvent.EventType of
+    yetStreamStart, yetStreamEnd, yetMappingEnd, yetSequenceEnd,
+    yetDocumentEnd:
+      Exit;
+  end;
+  // the events of the current document are in FEvents. The event must be
+  // the event that Next returned last.
+  if (FIndex < 1) or (FIndex > Length(FEvents))
+    or (not SameEvent(FEvents[FIndex - 1], AEvent)) then
+    raise EYamlParserError.Create(
+      'The event log is off. The event is not the last event of the puller',
+      AEvent.Line, AEvent.Column);
+  Index := FIndex - 1;
+  Need := Index + 1;
+  if (AEvent.EventType = yetMappingStart)
+    or (AEvent.EventType = yetSequenceStart) then
+    Need := TYamlJsonBuilder.FindNodeEnd(FEvents, Index) + 1
+  else if AEvent.EventType = yetDocumentStart then
+  begin
+    Need := Length(FEvents);
+    for K := Index + 1 to High(FEvents) do
+      if FEvents[K].EventType = yetDocumentEnd then
+      begin
+        Need := K + 1;
+        Break;
+      end;
+  end;
+  if Need > Length(FEvents) then
+    Need := Length(FEvents);
+  Builder := TYamlJsonBuilder.Create;
+  try
+    AData := Builder.BuildSection(Copy(FEvents, 0, Need), Index);
+  finally
+    Builder.Free;
+  end;
+  if AData <> nil then
+    MoveCursorPast(AEvent);
 end;
 
 function TYamlPuller.BuildSectionFromLog(AIndex: Integer;

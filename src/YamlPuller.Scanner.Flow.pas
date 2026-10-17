@@ -26,12 +26,86 @@ function ScanAnchor(var C: TYamlScanCursor; out AName: UnicodeString): Boolean;
 /// read an alias name from C, after the "*"
 function ScanAlias(var C: TYamlScanCursor; out AName: UnicodeString): Boolean;
 
+/// true when the character at AIndex opens a quoted scalar. A quote opens a
+/// scalar only at the start of the text, or after a space, a tab, a flow
+/// indicator, or a colon. A quote inside a plain scalar is a normal character.
+function IsQuoteStart(const AText: UnicodeString; AIndex: Integer): Boolean;
+
+/// the index of the closing quote of the quoted scalar that opens at AIndex.
+/// A double-quoted scalar skips a backslash escape. A single-quoted scalar
+/// reads two quotes as one. The result is Length(AText) when the scalar is
+/// not closed.
+function QuotedEnd(const AText: UnicodeString; AIndex: Integer): Integer;
+
+/// the position of the colon that ends the key of a flow mapping entry, or 0.
+/// A colon follows a quoted key without a space. For a plain key, a space or
+/// the end of the entry follows the colon.
+function FindFlowKeyColon(const AEntry: UnicodeString): Integer;
+
 /// split a flow collection body on the top-level commas. The nested brackets
 /// and the quoted text do not count.
 procedure SplitFlowEntries(const ABody: UnicodeString;
   out AEntries: TArray<UnicodeString>);
 
 implementation
+
+function IsQuoteStart(const AText: UnicodeString; AIndex: Integer): Boolean;
+begin
+  Result := (AIndex >= 1) and (AIndex <= Length(AText))
+    and ((AText[AIndex] = '"') or (AText[AIndex] = ''''));
+  if Result and (AIndex > 1) then
+    Result := AText[AIndex - 1] in [' ', #9, '[', '{', ',', ':'];
+end;
+
+function QuotedEnd(const AText: UnicodeString; AIndex: Integer): Integer;
+var
+  Q: WideChar;
+  I: Integer;
+begin
+  Q := AText[AIndex];
+  I := AIndex + 1;
+  while I <= Length(AText) do
+  begin
+    if (Q = '"') and (AText[I] = '\') then
+      Inc(I)
+    else if AText[I] = Q then
+    begin
+      if (Q = '''') and (I < Length(AText)) and (AText[I + 1] = '''') then
+        Inc(I)
+      else
+        Exit(I);
+    end;
+    Inc(I);
+  end;
+  Result := Length(AText);
+end;
+
+function FindFlowKeyColon(const AEntry: UnicodeString): Integer;
+var
+  I, LastQuoteEnd: Integer;
+begin
+  Result := 0;
+  LastQuoteEnd := 0;
+  I := 1;
+  while I <= Length(AEntry) do
+  begin
+    if IsQuoteStart(AEntry, I) then
+    begin
+      I := QuotedEnd(AEntry, I);
+      LastQuoteEnd := I;
+    end
+    else if AEntry[I] = ':' then
+    begin
+      if (I = Length(AEntry)) or (AEntry[I + 1] = ' ') then
+        Exit(I);
+      // a quoted key needs no space after the colon
+      if (LastQuoteEnd > 0) and (Trim(Copy(AEntry, LastQuoteEnd + 1,
+        I - LastQuoteEnd - 1)) = '') then
+        Exit(I);
+    end;
+    Inc(I);
+  end;
+end;
 
 function IsNameChar(Ch: WideChar): Boolean;
 begin
@@ -119,35 +193,24 @@ procedure SplitFlowEntries(const ABody: UnicodeString;
   out AEntries: TArray<UnicodeString>);
 var
   I, Depth, Start: Integer;
-  InSingle, InDouble: Boolean;
   Ch: WideChar;
 begin
   SetLength(AEntries, 0);
   Depth := 0;
   Start := 1;
-  InSingle := False;
-  InDouble := False;
-  for I := 1 to Length(ABody) + 1 do
+  I := 1;
+  while I <= Length(ABody) + 1 do
   begin
     if I <= Length(ABody) then
       Ch := ABody[I]
     else
       Ch := ',';
-    if InSingle then
+    if (I <= Length(ABody)) and IsQuoteStart(ABody, I) then
     begin
-      if Ch = '''' then
-        InSingle := False;
-      Continue;
-    end;
-    if InDouble then
-    begin
-      if Ch = '"' then
-        InDouble := False;
+      I := QuotedEnd(ABody, I) + 1;
       Continue;
     end;
     case Ch of
-      '''': InSingle := True;
-      '"': InDouble := True;
       '[', '{': Inc(Depth);
       ']', '}': Dec(Depth);
       ',':
@@ -158,6 +221,7 @@ begin
           Start := I + 1;
         end;
     end;
+    Inc(I);
   end;
 end;
 

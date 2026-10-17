@@ -254,6 +254,25 @@ The operation reads only the events that the subsection needs. The read stops
 at the end event of the subsection. A caller reads a subsection near the
 start of a large source without reading the later documents.
 
+When `event` is the event that `Next` returned last, and it starts a mapping or
+a sequence, the cursor moves past the end event of the subsection. The next
+call of `Next` then returns the event that follows the subsection. A scalar
+and an alias end at their own event, so the cursor does not move.
+
+With `KeepEventLog` set to false, the puller keeps only the events of the
+current document. `event` must be the event that `Next` returned last, and any
+other event raises `EYamlParserError`.
+
+## Flow Collections and Quoted Scalars
+
+A flow collection can hold quoted scalars that contain flow indicators, quotes,
+and escapes. The scanner reads a quoted scalar as one unit, so `["a[b","c]d"]`
+has two scalars, and `{"a'":1}` has the key `a'`. The key of a flow mapping
+that is a quoted scalar needs no space after the colon, so `{"a":1}` is a
+mapping with the key `a`. A plain key keeps the rule that a space or the end of
+the entry follows the colon. A quote in a plain scalar, as in `don't: 1`, is a
+normal character.
+
 ## Example: a Subsection
 
 The example below reads the events until the value of the member `server`.
@@ -462,7 +481,7 @@ The memory that the puller holds follows this table:
 | The source text | One character value per input character |
 | The line start offsets | One integer per physical line |
 | The tokens of one region | One token per token run, for the current region only |
-| The event log | One event per event of each region that the puller has read |
+| The event log | One event per event of each region that the puller has read. Only the current region when `KeepEventLog` is false. |
 | The JSON tree | One value per node, for the `Parse` call only |
 
 The `Parse` operation reads the whole remaining source, because it builds the

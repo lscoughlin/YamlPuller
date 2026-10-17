@@ -74,10 +74,16 @@ TYamlPuller:
     HasNext: boolean # more events are available
     Parse: TJSONData # reads the whole event stream into an FCL JSON value
     Parse( event: TYamlEvent, data: TJSONData ) # reads one subsection
+    KeepEventLog: boolean # true while the puller keeps the event log
 ```
 
 - `Next` returns the next event from the stream.
 - `HasNext` states whether more events are available.
+- `KeepEventLog` is true at the start. With false, the puller keeps no log of
+  the events. `Parse(event, data)` then accepts only the event that `Next`
+  returned last, and the memory follows the size of one document. The caller
+  sets the property before the first call of `Next`. The whole-stream `Parse`
+  then needs a puller that returned no event.
 - `Parse` reads the whole event stream and returns an FCL JSON value.
   - A stream with one document returns the value of that document. The value
     is a `TJSONObject`, a `TJSONArray`, or a scalar.
@@ -119,6 +125,7 @@ TYamlEvent:
     NestLevel: integer # the nesting depth
     Line: integer # the 1-based line of the event
     Column: integer # the 1-based column of the event
+    ScalarType: TYamlScalarType # the resolved type of a scalar event
 ```
 
 - `EventType` is one value of the `TYamlEventType` enumeration.
@@ -127,6 +134,13 @@ TYamlEvent:
   start event and each sequence start event adds one. Each mapping end event
   and each sequence end event removes one.
 - `Line` and `Column` give the position of the event in the input.
+- `ScalarType` is the resolved type of a scalar event: `ystNull`, `ystBool`,
+  `ystInt`, `ystFloat`, or `ystStr`. Other events have `ystUnresolved`.
+
+The function `YamlMemberName(event)` returns the member name of a scalar event
+that is a mapping key. A string key gives its text. A key of another type
+gives its canonical core-schema text. This is the name that `Parse` gives to
+the member.
 
 ## License
 

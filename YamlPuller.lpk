@@ -8,59 +8,64 @@
     <License Value="Apache-2.0"/>
     <Description Value="A YAML 1.2 pull parser for Object Pascal."/>
     <Version Major="0" Minor="2" Release="0" Build="0"/>
-    <Files Count="13">
+    <Files Count="14">
       <Item1>
-        <Filename Value="src/YamlPuller.pas"/>
-        <UnitName Value="YamlPuller"/>
+        <Filename Value="src/yamlpullerpkg.pas"/>
+        <Type Value="Main Unit"/>
+        <UnitName Value="yamlpullerpkg"/>
       </Item1>
       <Item2>
-        <Filename Value="src/YamlPuller.Input.pas"/>
-        <UnitName Value="YamlPuller.Input"/>
+        <Filename Value="src/YamlPuller.pas"/>
+        <UnitName Value="YamlPuller"/>
       </Item2>
       <Item3>
-        <Filename Value="src/YamlPuller.Events.pas"/>
-        <UnitName Value="YamlPuller.Events"/>
+        <Filename Value="src/YamlPuller.Input.pas"/>
+        <UnitName Value="YamlPuller.Input"/>
       </Item3>
       <Item4>
-        <Filename Value="src/YamlPuller.Scanner.Core.pas"/>
-        <UnitName Value="YamlPuller.Scanner.Core"/>
+        <Filename Value="src/YamlPuller.Events.pas"/>
+        <UnitName Value="YamlPuller.Events"/>
       </Item4>
       <Item5>
-        <Filename Value="src/YamlPuller.Scanner.pas"/>
-        <UnitName Value="YamlPuller.Scanner"/>
+        <Filename Value="src/YamlPuller.Scanner.Core.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Core"/>
       </Item5>
       <Item6>
-        <Filename Value="src/YamlPuller.Scanner.Comments.pas"/>
-        <UnitName Value="YamlPuller.Scanner.Comments"/>
+        <Filename Value="src/YamlPuller.Scanner.pas"/>
+        <UnitName Value="YamlPuller.Scanner"/>
       </Item6>
       <Item7>
-        <Filename Value="src/YamlPuller.Scanner.Scalar.pas"/>
-        <UnitName Value="YamlPuller.Scanner.Scalar"/>
+        <Filename Value="src/YamlPuller.Scanner.Comments.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Comments"/>
       </Item7>
       <Item8>
-        <Filename Value="src/YamlPuller.Scanner.Block.pas"/>
-        <UnitName Value="YamlPuller.Scanner.Block"/>
+        <Filename Value="src/YamlPuller.Scanner.Scalar.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Scalar"/>
       </Item8>
       <Item9>
-        <Filename Value="src/YamlPuller.Scanner.Flow.pas"/>
-        <UnitName Value="YamlPuller.Scanner.Flow"/>
+        <Filename Value="src/YamlPuller.Scanner.Block.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Block"/>
       </Item9>
       <Item10>
-        <Filename Value="src/YamlPuller.Parser.pas"/>
-        <UnitName Value="YamlPuller.Parser"/>
+        <Filename Value="src/YamlPuller.Scanner.Flow.pas"/>
+        <UnitName Value="YamlPuller.Scanner.Flow"/>
       </Item10>
       <Item11>
-        <Filename Value="src/YamlPuller.Schema.pas"/>
-        <UnitName Value="YamlPuller.Schema"/>
+        <Filename Value="src/YamlPuller.Parser.pas"/>
+        <UnitName Value="YamlPuller.Parser"/>
       </Item11>
       <Item12>
-        <Filename Value="src/YamlPuller.JSON.pas"/>
-        <UnitName Value="YamlPuller.JSON"/>
+        <Filename Value="src/YamlPuller.Schema.pas"/>
+        <UnitName Value="YamlPuller.Schema"/>
       </Item12>
       <Item13>
+        <Filename Value="src/YamlPuller.JSON.pas"/>
+        <UnitName Value="YamlPuller.JSON"/>
+      </Item13>
+      <Item14>
         <Filename Value="src/YamlPuller.Errors.pas"/>
         <UnitName Value="YamlPuller.Errors"/>
-      </Item13>
+      </Item14>
     </Files>
     <RequiredPkgs Count="1">
       <Item1>
@@ -83,6 +88,9 @@
         <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
     </CompilerOptions>
+    <UsageOptions>
+      <UnitPath Value="$(PkgOutDir)"/>
+    </UsageOptions>
     <PublishOptions>
       <Version Value="2"/>
     </PublishOptions>

@@ -13,7 +13,7 @@ program YamlPuller.RunTests;
 uses
   SysUtils, Classes, consoletestrunner, YamlPuller.Compliance.Test,
   YamlPuller.Schema.Test, YamlPuller.Parse.Test, YamlPuller.Streaming.Test,
-  YamlPuller.Section.Test;
+  YamlPuller.Section.Test, YamlPuller.NoLog.Test, YamlPuller.Flow.Test;
 
 var
   App: TTestRunner;
