@@ -100,7 +100,7 @@ function EventTypeName(AType: TYamlEventType): string;
 
 /// the library version
 const
-  YAML_PULLER_VERSION = '0.3.0';
+  YAML_PULLER_VERSION = '0.4.0';
 
 implementation
 

@@ -1,6 +1,6 @@
 # YamlPuller
 
-Version 0.3.0.
+Version 0.4.0.
 
 YamlPuller is a YAML 1.2 compliant pull parser. It is an Object Pascal library.
 The library uses the FCL JSON classes for the `Parse` result.
