@@ -16,7 +16,7 @@ unit YamlPuller.Input;
 interface
 
 uses
-  SysUtils, Classes, YamlPuller.Errors;
+  SysUtils, Classes, StreamEx, YamlPuller.Errors;
 
 type
   TYamlInput = class;
@@ -51,6 +51,10 @@ type
     class function FromFile(const AHandle: THandle): TYamlInput;
     /// read from a stream, from the current position to the end
     class function FromStream(AStream: TStream): TYamlInput;
+    /// read UTF-8 text from a text reader, such as a StreamEx TStreamReader,
+    /// to the end. The reader gives whole lines, so the text always ends with
+    /// a line break. The caller keeps the reader.
+    class function FromReader(AReader: TTextReader): TYamlInput;
     /// read from a byte buffer
     class function FromBytes(const ABytes: TBytes): TYamlInput;
     /// read from a UTF-8 string
@@ -269,6 +273,29 @@ begin
   SetLength(B, Count);
   if Count > 0 then
     AStream.ReadBuffer(B[0], Count);
+  Result := TYamlInput.Create(Decode(B));
+end;
+
+class function TYamlInput.FromReader(AReader: TTextReader): TYamlInput;
+var
+  B: TBytes;
+  Line: AnsiString;
+  N: Integer;
+begin
+  B := nil;
+  N := 0;
+  while not AReader.Eof do
+  begin
+    AReader.ReadLine(Line);
+    if N + Length(Line) + 1 > Length(B) then
+      SetLength(B, (N + Length(Line) + 1) * 2);
+    if Length(Line) > 0 then
+      Move(Line[1], B[N], Length(Line));
+    Inc(N, Length(Line));
+    B[N] := 10;
+    Inc(N);
+  end;
+  SetLength(B, N);
   Result := TYamlInput.Create(Decode(B));
 end;
 

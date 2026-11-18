@@ -15,7 +15,7 @@ unit YamlPuller;
 interface
 
 uses
-  SysUtils, Classes, fpjson, YamlPuller.Events, YamlPuller.Errors,
+  SysUtils, Classes, StreamEx, fpjson, YamlPuller.Events, YamlPuller.Errors,
   YamlPuller.Input, YamlPuller.Scanner.Core, YamlPuller.Scanner,
   YamlPuller.Parser, YamlPuller.JSON, YamlPuller.Schema;
 
@@ -83,6 +83,9 @@ type
   public
     class function FromFile(const AFile: THandle): TYamlPuller;
     class function FromStream(AStream: TStream): TYamlPuller;
+    /// reads UTF-8 text from a text reader, such as a StreamEx TStreamReader.
+    /// The caller keeps the reader.
+    class function FromReader(AReader: TTextReader): TYamlPuller;
     class function FromBytes(const ABytes: TBytes): TYamlPuller;
     class function FromString(const AText: UTF8String): TYamlPuller;
   end;
@@ -97,7 +100,7 @@ function EventTypeName(AType: TYamlEventType): string;
 
 /// the library version
 const
-  YAML_PULLER_VERSION = '0.2.0';
+  YAML_PULLER_VERSION = '0.3.0';
 
 implementation
 
@@ -444,6 +447,11 @@ end;
 class function TYamlPullerFactory.FromStream(AStream: TStream): TYamlPuller;
 begin
   Result := TYamlPuller.Create(TYamlInput.FromStream(AStream));
+end;
+
+class function TYamlPullerFactory.FromReader(AReader: TTextReader): TYamlPuller;
+begin
+  Result := TYamlPuller.Create(TYamlInput.FromReader(AReader));
 end;
 
 class function TYamlPullerFactory.FromBytes(const ABytes: TBytes): TYamlPuller;

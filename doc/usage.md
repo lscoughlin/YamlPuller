@@ -28,6 +28,7 @@ of method follows the data source.
 | Method | Data source |
 |---|---|
 | `FromFile(file: handle)` | An open file handle |
+| `FromReader(areader: TTextReader)` | A StreamEx `TStreamReader` or other `TTextReader`. The text is UTF-8. |
 | `FromStream(astream: TStream)` | A `TStream` instance |
 | `FromBytes(astream: TBytes)` | A `TBytes` value |
 | `FromString(astream: utf8string)` | A UTF-8 string |

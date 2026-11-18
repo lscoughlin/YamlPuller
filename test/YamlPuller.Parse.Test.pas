@@ -13,7 +13,7 @@ unit YamlPuller.Parse.Test;
 interface
 
 uses
-  SysUtils, Classes, fpjson, fpcunit, testregistry, YamlPuller,
+  SysUtils, Classes, StreamEx, fpjson, fpcunit, testregistry, YamlPuller,
   YamlPuller.Input, YamlPuller.Events, YamlPuller.Errors;
 
 type
@@ -23,6 +23,7 @@ type
     function Json(const AText: UTF8String): string;
   published
     procedure TestFlatMapping;
+    procedure TestReader;
     procedure TestNestedMapping;
     procedure TestSequence;
     procedure TestSequenceOfMappings;
@@ -355,6 +356,53 @@ begin
   // the caller releases the result. A double free must not occur.
   Data.Free;
   AssertTrue('the caller released the value', True);
+end;
+
+procedure TParseTest.TestReader;
+var
+  Stream: TStringStream;
+  Reader: TStreamReader;
+  Puller: TYamlPuller;
+  Data: TJSONData;
+  Text: UTF8String;
+  I: Integer;
+begin
+  // CRLF line breaks, a multi-byte value, and a line longer than the buffer
+  Text := 'a: 1'#13#10'b:'#13#10'  - x'#10'long: ' + StringOfChar('y', 5000)
+    + #10'u: ';
+  SetLength(Text, Length(Text) + 2);
+  Text[Length(Text) - 1] := AnsiChar($C3);
+  Text[Length(Text)] := AnsiChar($A9);
+  for I := 0 to 1 do
+  begin
+    Stream := TStringStream.Create(Text);
+    try
+      if I = 0 then
+        Reader := TStreamReader.Create(Stream, 16, False)
+      else
+        Reader := TStreamReader.Create(Stream);
+      try
+        Puller := TYamlPullerFactory.FromReader(Reader);
+        try
+          Data := Puller.Parse;
+          try
+            AssertEquals(1, TJSONObject(Data).Get('a', -1));
+            AssertEquals('x', TJSONObject(Data).Arrays['b'].Strings[0]);
+            AssertEquals(5000, Length(TJSONObject(Data).Get('long', '')));
+            AssertEquals(2, Length(UTF8String(TJSONObject(Data).Get('u', ''))));
+          finally
+            Data.Free;
+          end;
+        finally
+          Puller.Free;
+        end;
+      finally
+        Reader.Free;
+      end;
+    finally
+      Stream.Free;
+    end;
+  end;
 end;
 
 initialization

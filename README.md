@@ -1,6 +1,6 @@
 # YamlPuller
 
-Version 0.2.0.
+Version 0.3.0.
 
 YamlPuller is a YAML 1.2 compliant pull parser. It is an Object Pascal library.
 The library uses the FCL JSON classes for the `Parse` result.
@@ -54,6 +54,7 @@ build, and the Lazarus build use the same source units.
 TYamlPullerFactory:
     - TYamlPuller FromFile( file: handle )
     - TYamlPuller FromStream( astream: TStream )
+    - TYamlPuller FromReader( areader: TTextReader )
     - TYamlPuller FromBytes( astream: TBytes )
     - TYamlPuller FromString( astream: utf8string )
 ```
@@ -63,6 +64,9 @@ methods cover the four data sources:
 
 - `FromFile` reads from a file handle.
 - `FromStream` reads from a `TStream`.
+- `FromReader` reads UTF-8 text from a StreamEx `TTextReader`, for example a
+  `TStreamReader`, to the end. The reader gives whole lines, so the text
+  always ends with a line break. The caller keeps the reader.
 - `FromBytes` reads from a `TBytes` value.
 - `FromString` reads from a UTF-8 string.
 
